@@ -488,7 +488,7 @@ equired once I write the timeline for the project):
   commonly used ones. Okay, this list is getting kind of crazy, then you should
   know that I'll accept any suggestions or feedback constructively.
 * Compression support.
-* Cache? Okay, I'm getting out of ideas, it's your turn to suggest some
+* Proxy? Okay, I'm getting out of ideas, it's your turn to suggest some
   improvement.
 
 Keep in mind that the earlier proposed core library is pretty solid and the
