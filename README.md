@@ -31,18 +31,18 @@ writing the same skel code to setup the http server, the session store objects,
 the request handler dispatching/router and the glue among them. Fortunately, (1)
 the boilerplate is very small, (2) it's possible to go from non-intrusive design
 to the intrusive design (the opposite is not that easy, though) and (3) it's
-possible to provide minimal project examples that could be as templates for the
-user. One example by what I mean with #2 is to provide an even higher
+possible to provide minimal project examples that could be used as templates for
+the user. One example by what I mean with #2 is to provide an even higher
 abstraction that will assume that the user wants to use a common set of
 components and provide a less verbose interface, but this higher-level
 abstraction requires a core library first and is outside of the scope of this
 proposal.
 
 The only requirement/intrusiveness of the library, ideally, should be an async
-programmin model, but this only affect programming tastes and doesn't imply that
-the library cannot be used in certain devices or clusters.
+programming model, but this only affect programming tastes and doesn't imply
+that the library cannot be used in certain devices or clusters.
 
-The only feature that should include a overhead in the proposal is the
+The only feature that should include an overhead in the proposal is the
 decoupling of HTTP messages and HTTP connections (the HTTP parser). HTTP
 messages should be feeded by producer backends that could implement different
 communications such as a builtin HTTP server, a FastCGI receiver and others.
@@ -262,7 +262,7 @@ under the `boost::http::server` namespace.
 
 This section is here to give you an important overview of one of the simplest
 handling models possible with the proposed library. This is done to avoid the
-[Blind men and an elephant](
+[blind men and an elephant](
 https://en.wikipedia.org/wiki/Blind_men_and_an_elephant) syndrome.
 
 #### The built in HTTP server way
@@ -455,7 +455,7 @@ adapt itself to support futures, coroutines and Boost.Fiber, to name a few. I'm
 not sure if it's possible to support them all within the GSoC timeframe and I
 need to study a bit further to check that. If ASIO can help me enough, then I
 think it'll be possible to implement them all, but if not, I want at least to
-make sure that more models can be supported in the future without API breaks.
+make sure that more models can be supported in the future without API breakage.
 
 ## Extra features
 
@@ -492,8 +492,8 @@ equired once I write the timeline for the project):
   improvement.
 
 Keep in mind that the earlier proposed core library is pretty solid and the
-previous cited "extra features" can be implemented without break of API or ABI.
-Also, some of the earlier features are protocols that I already implemented
+previous cited "extra features" can be implemented without breakage of API or
+ABI. Also, some of the earlier features are protocols that I already implemented
 before and I wouldn't get lost, need help or take too long to implement.
 
 Also, each one of these "optional features" should have its own document in a
