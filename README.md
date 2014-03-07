@@ -199,10 +199,26 @@ One problem with cpp-netlib is the fact that they choose a design that made
 difficult to support some features like HTTP pipelining and support for other
 backends like FastCGI. The design presented here doesn't suffer this problem.
 
-There is much more about the _cpp-netlib_ project that I didn't read enough, but
-the project is interesting enough to the point that raised my curiosity and I
-plan to study more about it soon. Things that I want to analyze more carefully
-include the defined concepts (eg. the request concept).
+Also, it seems that the lack of unification among the abstractions has been
+caused by a lower priority to include support for modern HTTP features and
+asynchronous operations in the earlier design. Even though HTTP is not that
+_modern_, but pretty stable actually.
+
+Most of the templated nature of cpp-netlib comes around the `request` concept,
+which doesn't really need generality. Within cpp-netlib, this concept is defined
+for synchronous servers and asynchronous servers. In the model proposed here, I
+intend to support primarily the asynchornous model and provide support for
+synchronous-like or purely synchronous model through the extensible ASIO model,
+but I need to research the topic a little deeper before giving any such
+guarantees (synchronous-suppored model).
+
+The remaining of the introduced generality can be provided through static
+polymorphism using non-member functions. This generality can be added later and
+is outside of the scope of this proposal. These functions could be useful to
+abstract differences between a server-incoming http request and a
+client-outgoing http request. It's still a good idea to keep them separate
+objects, because they serve different purposes (asynchronous reading from a
+multitude of backends and asynchronous writing).
 
 ### std::future
 
