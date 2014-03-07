@@ -482,7 +482,7 @@ open to suggestions and I won't mind to refactor the interface in the middle of
 the implementation work, but to compensate the big difference of effort between
 interface and implementation, some of the following features would be
 implemented too (I'll decide which ones are optionals and which ones are
-equired once I write the timeline for the project):
+required once I write the timeline for the project):
 
 * Session support (based on Tufão's session support, which leverages client-side
   and server-side based session stores under the same interface, but with
