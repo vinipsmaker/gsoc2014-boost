@@ -347,7 +347,7 @@ they've chosen the same solution, `std::function`.
 It's guaranteed that the arguments passed to the `handler` will exist as long as
 `response` is not finished.
 
-```
+```cpp
 namespace boost {
 namespace http {
 namespace server {
@@ -378,7 +378,7 @@ public:
 
 ### The `boost::http::server::request` class
 
-```
+```cpp
 namespace boost {
 namespace http {
 namespace server {
@@ -440,7 +440,7 @@ for most of the operations declared in this section.
 The headers are an acessible property of the `response` object and will be
 streamed just before the first chunk of the body is issued.
 
-```
+```cpp
 namespace boost {
 namespace http {
 namespace server {
@@ -530,7 +530,7 @@ not enumarated in this abstraction, then an integer would be chosen instead of
 this enum in such client library, but this abstraction is still useful for
 comparassions maintaining readable code. Consider the following example:
 
-```
+```cpp
 if ( response.status_code() /* returns an integer */ == status_code::OK ) {
     // ...
 }
@@ -540,7 +540,7 @@ Of course I'm aiming C++11 at minimum and enum classes are useful to avoid
 namespace polution. Then, to the code above work, the following two declarations
 would be required:
 
-```
+```cpp
 bool operator==(status lhs, int rhs);
 bool operator==(int lhs, status rhs);
 ```
@@ -559,7 +559,7 @@ server. ASIO documentation advises to not schedule any operation on the
 _moved-from_ object. Then you'll likely want to use the accessor method to the
 internal acceptor.
 
-```
+```cpp
 namespace boost {
 namespace http {
 namespace server {
