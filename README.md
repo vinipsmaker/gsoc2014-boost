@@ -344,13 +344,16 @@ possible to add it in the future.
 The proposal for executors and schedulers (n3731) face a similar problem and
 they've chosen the same solution, `std::function`.
 
+It's guaranteed that the arguments passed to the `handler` will exist as long as
+`response` is not finished.
+
 ```
 namespace boost {
 namespace http {
 namespace server {
 class backend {
 public:
-    typedef std::function<void(request, response)> handler_type;
+    typedef std::function<void(request&, response&)> handler_type;
     /* unspecified: pool_type */
 
     virtual ~backend() {}
@@ -375,6 +378,32 @@ public:
 
 ### The `boost::http::server::request` class
 
+```
+namespace boost {
+namespace http {
+namespace server {
+class request {
+public:
+    request(boost::http::server::backend &backend);
+
+    /**
+     * Check if request include `100-continue` in the _Expect_ header. It's just
+     * a convenient method that doesn't imply backend access overhead.
+     *
+     * The backend access will only happen in the
+     * `boost::http::server::response::write_continue`. See the mentioned
+     * function for more details.
+     *
+     * The name _required_ is used instead _supported_, because a 100-continue
+     * status require action from the server.
+     */
+    bool continue_required() const;
+};
+}
+}
+}
+```
+
 > TODO
 
 The object **MUST** not be destroyed, cleaned, reseted or recycled by the
@@ -385,11 +414,92 @@ undefined behaviour.
 
 ### The `boost::http::server::response` class
 
+One HTTP response message is made of a status line (HTTP version, status code
+and human readable arbitrary status message), some headers and a body (possibly
+streamable).
+
+The HTTP version on the status line is responsibility of the backend. The user
+should explicitly pass an integer status code and reason phrase pair or use
+a valid `boost::http::status_code` value to let the server guess a reason
+phrase. The status line must be written before any other information and is
+responsibility of the user to call a function to write this message before any
+other function. Given this behaviour, it's appropriate to use the name `open`
+for this function, but `write_head` convenient functions are also provided.
+
+There is no guarantee that the status line will be delivered, sent or scheduled
+to the remote client once the function `open` returns. This behaviour was chosen
+to give a good flexibility to the backend, because a status line by itself is
+almost useless without the rest of the message (even if the message is empty).
+The `error_code` can only detect immediate errors (eg. wrong order of operations)
+and if you're interested in detect all errors (including unexpected connection
+close), you should use the `async_open` function. This behaviour will be true
+for most of the operations declared in this section.
+
+<!-- TODO mentioned in the previous paragraph -->
+
+The headers are an acessible property of the `response` object and will be
+streamed just before the first chunk of the body is issued.
+
+```
+namespace boost {
+namespace http {
+namespace server {
+class response {
+public:
+    response(boost::http::server::backend &backend,
+             bool native_stream);
+
+    /**
+     * Clear all state (headers, trailers) from the object and give it another
+     * backend.
+     */
+    void reset(boost::http::server::backend &backend,
+               bool native_stream);
+
+    /**
+     * Export info about the backend/connection behaviour/nature.
+     *
+     * Native stream also implies trailers support.
+     */
+    bool native_stream() const;
+
+    /**
+     * Write the 100-continue status that must be written before the client
+     * proceed to feed body of the request.
+     *
+     * \warning This function **MUST** be called before `open` and only should
+     * be called if `boost::http::server::request::continue_required` returns
+     * true.
+     */
+    boost::system::error_code write_continue();
+
+    boost::system::error_code open(boost::http::status_code);
+    boost::system::error_code open(int status_code, string reason_phrase);
+
+    boost::system::error_code write_head(boost::http::status_code);
+    boost::system::error_code write_head(int status_code, string reason_phrase);
+
+    /**
+     * Once the first chunk of body is sent, this attribute will enter in an
+     * unspecified state and might or might not be used again by the backend.
+     *
+     * It's recommended to the user to _clear_ this attribute once the object is
+     * done.
+     */
+    boost::http::headers headers;
+
+    // trailers
+};
+}
+}
+}
+```
+
 > TODO
 
 ### The `boost::http::headers` container
 
-This is the only name currently defined outside of the namespace
+This is one of the only two name currently defined outside of the namespace
 `boost::http::server` and it would also be used in a future HTTP client library.
 
 Initially it would be a typedef for an `unordered_multimap<string, string>`, but
@@ -407,6 +517,33 @@ good hash algorithm would be:
   and possibly develop a new algorithm. Such idea is outside of the scope of
   this proposal, but this data could at least help benchmarking considered
   choices.
+
+### The `boost::http::status_code` enum
+
+Just an enum class containing the useful status codes defined in RFC2616. A
+client library will receive a status code through the response from the remote
+server, then this declaration is done outside of the server namespace, because
+it's useful for servers and clients.
+
+The client library (outside of the scope of this proposal) can receive integers
+not enumarated in this abstraction, then an integer would be chosen instead of
+this enum in such client library, but this abstraction is still useful for
+comparassions maintaining readable code. Consider the following example:
+
+```
+if ( response.status_code() /* returns an integer */ == status_code::OK ) {
+    // ...
+}
+```
+
+Of course I'm aiming C++11 at minimum and enum classes are useful to avoid
+namespace polution. Then, to the code above work, the following two declarations
+would be required:
+
+```
+bool operator==(status lhs, int rhs);
+bool operator==(int lhs, status rhs);
+```
 
 ### The `boost::http::server::server` implementation
 
@@ -443,20 +580,22 @@ public:
 }
 ```
 
-> TODO :
+> TODO
 
-> decide interface for object recycling and consider how it could be done
-> optional to fit well in memory-constrained devices
+<!--
+ choose interface for object recycling and consider how it could be done
+ optional to fit well in memory-constrained devices
+ -->
 
 ### Where the proposal needs to be improved?
 
-There's currently poor definition about how error handling should happen and
-I'm investigating which is the best approach studying Boost ASIO and Boost AFIO,
-at the same time that I compare it with my experience with other async
+There's currently incomplete definition about how error handling should happen
+and I'm investigating which is the best approach studying Boost ASIO and Boost
+AFIO, at the same time that I compare it with my experience with other async
 frameworks.
 
-I'll probably end up using the ASIO approach, but I need to think a bit further
-about it.
+The more I write, the more I think I'll probably end up using the ASIO approach,
+but I still don't want to specify. Stay tuned for updates in this document.
 
 I still need to consider the ssl connections and integrate it nicely in the
 library. By _nicely_ I mean that I need to do it reducing the duplication of
@@ -484,9 +623,9 @@ interface and implementation, some of the following features would be
 implemented too (I'll decide which ones are optionals and which ones are
 required once I write the timeline for the project):
 
-* Session support (based on Tufão's session support, which leverages client-side
-  and server-side based session stores under the same interface, but with
-  improved usability thanks to Boost and C++11).
+* Session support (inspired on Tufão's session support, which abstracts
+  client-side and server-side based session stores under the same interface, but
+  with improved usability thanks to Boost and C++11).
 * HTTP/2.0 experimental support (I'm not aware of the protocol details, then I'm
   not so sure about the difficult, but people implementing it are stating that
   is easier than HTTP/1.1).
@@ -519,6 +658,11 @@ I'd prefer to implement HTTP/2.0 sooner, then the new features that require
 extending (read _extending_ as extending, not _changing_) the core API to
 provide server-sent responses to non-yet-received-requests would be propagated
 sooner.
+
+Good candidates to be implemented after HTTP/2.0 are the threads helpers and the
+router with some sample handlers to prove the flexibility and power of the API.
+This proof can help to convince boost members to agree that this is a good
+design and should be integrated within the rest of the project.
 
 Another thing to keep in mind is that I prefer to implement features on the
 order that will benefit my users the most. On my last year's participation in
