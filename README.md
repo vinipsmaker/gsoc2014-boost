@@ -426,14 +426,10 @@ responsibility of the user to call a function to write this message before any
 other function. Given this behaviour, it's appropriate to use the name `open`
 for this function, but `write_head` convenient functions are also provided.
 
-There is no guarantee that the status line will be delivered, sent or scheduled
-to the remote client once the function `open` returns. This behaviour was chosen
-to give a good flexibility to the backend, because a status line by itself is
-almost useless without the rest of the message (even if the message is empty).
-The `error_code` can only detect immediate errors (eg. wrong order of operations)
-and if you're interested in detect all errors (including unexpected connection
-close), you should use the `async_open` function. This behaviour will be true
-for most of the operations declared in this section.
+> Previously, there was a confusing paragraph here, but after a lot of thought
+> about the implications and several tests with ASIO, I decided the path that I
+> was choosing wasn't adequate to the ASIO model, which I even consider better
+> and the text/decision was removed.
 
 <!-- TODO mentioned in the previous paragraph -->
 
