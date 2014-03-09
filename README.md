@@ -142,13 +142,10 @@ such as:
 
 These same ideas should be kept in mind while designing the library.
 
-### Twisted
+### Others
 
-Some members of the boost mailing list suggested me to take a look on Twisted
-and _do what they do_, but there wasn't many design ideas that would fit well
-for this library. If you have specific concerns, not only about Twisted, but any
-library, make an objective and directioned question and you'll have a more
-developed answer.
+If you have specific concerns, not only about any library, make an objective and
+directioned question and you'll have a more developed answer.
 
 Some examples of good question would be:
 
