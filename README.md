@@ -368,6 +368,10 @@ public:
      * plan to improve it.
      */
     virtual void async_handle(handler_type handler, pool_type *pool) = 0;
+
+    // ### Operations that mirror the ones within response object ###
+
+    // TODO: copy some response functions to here, but marked as pure virtual.
 };
 }
 }
@@ -419,27 +423,111 @@ and human readable arbitrary status message), some headers and a body (possibly
 streamable).
 
 The HTTP version on the status line is responsibility of the backend. The user
-should explicitly pass an integer status code and reason phrase pair or use
-a valid `boost::http::status_code` value to let the server guess a reason
-phrase. The status line must be written before any other information and is
-responsibility of the user to call a function to write this message before any
-other function. Given this behaviour, it's appropriate to use the name `open`
-for this function, but `write_head` convenient functions are also provided.
+should explicitly pass an integer status code and a reason phrase or use a valid
+`boost::http::status_code` value to let the server guess a reason phrase. The
+status line must be written before any other information and is responsibility
+of the user to call a function to write this message before any other function.
+Given this behaviour, it's appropriate to use the name `open` for this function,
+but `write_head` convenient functions are also provided.
 
 > Previously, there was a confusing paragraph here, but after a lot of thought
 > about the implications and several tests with ASIO, I decided the path that I
 > was choosing wasn't adequate to the ASIO model, which I even consider better
 > and the text/decision was removed.
 
-<!-- TODO mentioned in the previous paragraph -->
+No matter if you use the blocking calls or the async calls, a minimum checking
+is done before dispatching the actions to the backend. The only error checking
+done at this stage is related to the order of the actions. Wrong order of
+actions are only caused by programming error (failing to comply with a
+precondition) and not related to exceptional events outside of programmer's
+control. A separate error_category is used only for this class of errors and
+could be used in automated tests to help in assuring the code quality.
 
 The headers are an acessible property of the `response` object and will be
 streamed just before the first chunk of the body is issued.
+
+This API abstracts several of the different HTTP behaviours, while it still
+allow an efficient implementation. The only non-efficient (or even impossible)
+implementation would be body streaming through HTTP/1.0 and some server to
+process communcation schemes where the backend is forced to buffer the whole
+data before the first piece of information is actually sent, but this API also
+exposes the `native_stream()` property to protect the user against such
+environments. Due to the previous mentioned fact and some others, it's possible
+that the server only will execute an action after the next actions are issued.
+Thanks to this fact, the user **SHOULDN'T** issue the next action inside the
+callback for a previous action. To help the user, order guarantee is mandated
+for all backends.
+
+Lastly, I'm thinking about renaming `close` to `end`, because (1) the backend
+won't actually close the socket (just the session) and (2) an unclean close may
+happen and an `async_close` may be desired, but there is no matching
+`async_close` in ASIO sockets, then a different name may be desired to help
+differentiate the two entities.
+
+![](response_state.png)
 
 ```cpp
 namespace boost {
 namespace http {
 namespace server {
+/**
+ * Represents the current state in the HTTP response.
+ *
+ * The picture response_state.png can help you understand this file.
+ */
+enum class response_state
+{
+    /**
+     * This is the initial state.
+     *
+     * It means that the response object wasn't used yet.
+     *
+     * At this state, you can only issue the status line or issue a continue
+     * action, if continue is supported/used in this HTTP session. Even if
+     * continue was requested, issue a continue action is optional and only
+     * required if you need the request's body.
+     */
+    EMPTY,
+    /**
+     * This state is reached from the `EMPTY` state, once you issue a continue
+     * action.
+     *
+     * No more continue actions can be issued from this state.
+     */
+    CONTINUE_ISSUED,
+    /**
+     * This state can be reached either from EMPTY or `CONTINUE_ISSUED`.
+     *
+     * It happens when the status line is reached (through `open` or `write_head`).
+     */
+    STATUS_LINE_ISSUED,
+    /**
+     * This state is reached once the first chunk of body is issued.
+     *
+     * \warning
+     * Once this state is reached, it is no longer safe to access the
+     * `boost::http::server::response::headers` attribute, which is left in an
+     * unspecified state and might or might nor be used again by the backend.
+     * You're safe to access and modify this attribute again once the `FINISHED`
+     * state is reached, but the attribute will be at an unspecified state and
+     * is recommended to _clear_ it.
+     */
+    HEADERS_ISSUED,
+    /**
+     * This state is reached once the first trailer is issued to the backend.
+     *
+     * After this state is reached, it's not allowed to write the body again.
+     * You can either proceed to issue more trailers or `close` the response.
+     */
+    BODY_ISSUED,
+    /**
+     * The response is considered complete once this state is reached. You
+     * should no longer access this response or the associated request objects,
+     * because the backend has the freedom to recycle or destroy the objects.
+     */
+    FINISHED
+};
+
 class response {
 public:
     response(boost::http::server::backend &backend,
@@ -459,21 +547,53 @@ public:
      */
     bool native_stream() const;
 
+    // ### SYNC VERSIONS ###
+    // Functions in this section might throw boost::system::system_error
+
     /**
      * Write the 100-continue status that must be written before the client
      * proceed to feed body of the request.
      *
-     * \warning This function **MUST** be called before `open` and only should
-     * be called if `boost::http::server::request::continue_required` returns
-     * true.
+     * \warning If `boost::http::server::request::continue_required` returns
+     * true, you **MUST** call this function (before open) to allow the remote
+     * client to send the body. If your handler can give an appropriate answer
+     * without the body, just reply as usual.
      */
-    boost::system::error_code write_continue();
+    void write_continue();
 
-    boost::system::error_code open(boost::http::status_code);
-    boost::system::error_code open(int status_code, string reason_phrase);
+    void open(boost::http::status_code);
+    void open(int status_code, string reason_phrase);
 
-    boost::system::error_code write_head(boost::http::status_code);
-    boost::system::error_code write_head(int status_code, string reason_phrase);
+    void write_head(boost::http::status_code);
+    void write_head(int status_code, string reason_phrase);
+
+    // ### END OF SYNC VERSIONS ###
+
+    // ### ASYNC VERSIONS with a callback ###
+
+    // Despites being async, the backend is responsible for guarantee the
+    // delivery order of the actions issued.
+
+    // If any issue occurs, the backend **MUST** ignore the remaining queued
+    // callbacks/actions and is free to delete them, but the response object
+    // itself (and the associated request object) must stay alive and unchanged
+    // until the user specifically calls `close`.
+
+    // I'm still thinking about behaviour on empty callback. Maybe it'd allow
+    // further optimization on the backend by not storing the backends at all.
+    // I'm still thinking and I won't describe this behaviour for now. (TODO)
+
+    void async_open(boost::http::status_code,
+                    std::function<void(boost::system::error_code)> callback);
+    void async_open(int status_code, string reason_phrase,
+                    std::function<void(boost::system::error_code)> callback);
+
+    void write_head(boost::http::status_code,
+                    std::function<void(boost::system::error_code)> callback);
+    void write_head(int status_code, string reason_phrase,
+                    std::function<void(boost::system::error_code)> callback);
+
+    // ### END OF ASYNC VERSIONS ###
 
     /**
      * Once the first chunk of body is sent, this attribute will enter in an
