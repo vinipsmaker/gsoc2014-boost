@@ -368,11 +368,6 @@ of the code (the handlers) would remain untouched and compatible.
 
 ### The `boost::http::server::backend` interface
 
-An unified interface for _request_s pools and _response_s pools was chosen to
-decrease the overhead of indirect function calls. Also, it's possible to compose
-different pools into one, if the user wants, but the opposite choice would imply
-overhead for the common case.
-
 I'm thinking about separating pool related functions in a second interface,
 inheriting from this one.
 
@@ -385,11 +380,6 @@ argument. This requirement could also be achieved through templates, but backend
 is meant to be an interface for HTTP message producers and function templates
 cannot be virtual. Also, the backend would need type erasure to handle all the
 different handlers meeting the required signature anyway.
-
-My proposal to solve the problem of the other cases is to expose a templated
-zero-overhead interface to the internal parser. Such interface is outside of the
-scope of this proposal and is less useful for most of the users, but it is
-possible to add it in the future.
 
 The proposal for executors and schedulers (n3731) face a similar problem and
 they've chosen the same solution, `std::function`.
@@ -461,8 +451,8 @@ public:
 > TODO
 
 The object **MUST** not be destroyed, cleaned, reseted or recycled by the
-backend or any other entity after the `end` event is reached. This action is
-only allowed **after** the `end` event of the associated `response` object. All
+backend or any other entity after the `close` event is reached. This action is
+only allowed **after** the `close` event of the associated `response` object. All
 internal backends give this guarantee and failing to comply with it triggers
 undefined behaviour.
 
@@ -672,17 +662,6 @@ Initially it would be a typedef for an `unordered_multimap<string, string>`, but
 I intend to discuss this concern further and possibly run a series of
 benchmarks. A custom `KeyEqual` functor will take care of case insensitive keys
 while discussions about the right container are ongoing.
-
-If the decision upon a hash-based contained is made, some initial hints about a
-good hash algorithm would be:
-
-* http://murilo.wordpress.com/2013/10/16/deeper-look-at-phps-array-worst-case/
-* https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function
-* A crazy idea to analyze the [most used HTTP headers](
-  https://stackoverflow.com/questions/114085/fast-string-hashing-algorithm-with-low-collision-rates-with-32-bit-integer)
-  and possibly develop a new algorithm. Such idea is outside of the scope of
-  this proposal, but this data could at least help benchmarking considered
-  choices.
 
 ### The `boost::http::status_code` enum
 
