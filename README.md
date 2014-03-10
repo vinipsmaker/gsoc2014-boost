@@ -497,6 +497,12 @@ public:
 
 ### The `boost::http::server::request` class
 
+The object **MUST** not be destroyed, cleaned, reseted or recycled by the
+backend or any other entity after the `close` event is reached. This action is
+only allowed **after** the `close` event of the associated `response` object. All
+internal backends give this guarantee and failing to comply with it triggers
+undefined behaviour.
+
 ```cpp
 namespace boost {
 namespace http {
@@ -524,12 +530,6 @@ public:
 ```
 
 > TODO
-
-The object **MUST** not be destroyed, cleaned, reseted or recycled by the
-backend or any other entity after the `close` event is reached. This action is
-only allowed **after** the `close` event of the associated `response` object. All
-internal backends give this guarantee and failing to comply with it triggers
-undefined behaviour.
 
 ### The `boost::http::server::response` class
 
