@@ -730,7 +730,7 @@ public:
 
 ### The `boost::http::headers` container
 
-This is one of the only two name currently defined outside of the namespace
+This is one of the only two names currently defined outside of the namespace
 `boost::http::server` and it would also be used in a future HTTP client library.
 
 Initially it would be a typedef for an `unordered_multimap<string, string>`, but
