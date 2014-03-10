@@ -1,5 +1,58 @@
 # HTTP server on boost
 
+## Goals
+
+* Develop a library for Boost submission and inclusion that abstracts HTTP.
+* Asynchronous design that provides scalability.
+* Modular design that doesn't force all abstractions to be used together.
+  * The main goal of the modular design is to fit well in embeded projects
+    developed for resource-constrained devices while it still provide the
+    possibility and some abstractions for better performance on devices not so
+    constrained, such as pools to recycle objects and threaded versions that can
+    (mostly) cooperate with the same interfaces.
+* Expose the HTTP power.
+  * Chunked entities. A stream interface that allow live-stream.
+  * 100-continue status. A feature to reduce network consumption.
+  * Upgrade support. A feature required for WebSocket.
+* Allow multiple backends such as FastCGI and CoAP. It will be useful also for
+  HTTP 2.0.
+
+## Non-goals
+
+* Provide lower abstractions to the HTTP parser.
+  * This project will use ready HTTP parsers, then I'll be free to focus on
+    other important features.
+  * It can be replaced later, because the parser interface will not be exposed
+    and it won't affect code that makes use of this library.
+* Provide even higher-abstractions to write template-driven MVC web applications
+  quickly.
+  * But it'll be possible to build such abstractions on top of the developed
+    library.
+  * In fact, there are a lot of higher-level abstractions competing with each
+    other, providing mostly incompatible abstractions. By not targeting this
+    field, this library can actually become a new base for all these
+    higher-level abstractions and allow greater interoperability among them.
+
+## Some target scenarios
+
+I've wrote this section several times, but Bjorn Reese put into better words
+than me, then I'll quote it.
+
+> 1. Targets embeddable HTTP servers (e.g. to implement ReST APIs).
+>    These servers should be able to co-exist with other embeddable
+>    communication facilities (e.g. Bonjour device discovery or
+>    BitTorrent.)
+> 2. Create a C++ toolbox for embeddable HTTP servers.
+>    This requires a modular design and a coherent thread model.
+> 3. Flexible design that can encompass HTTP chunking, HTTP pipelining,
+>    WebSockets, FastCGI, etc.
+> 4. Scalable performance.
+>    This requires an asynchronous design.
+> 5. Reuse existing std or Boost components, such as Boost.Asio.
+
+-- Bjorn Reese, [on the boost mailing list](
+http://article.gmane.org/gmane.comp.lib.boost.devel/249771)
+
 ## Design considerations
 
 The idea in this initial proposal is to implement a core library which is useful
