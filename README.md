@@ -195,34 +195,6 @@ such as:
 
 These same ideas should be kept in mind while designing the library.
 
-### Others
-
-If you have specific concerns, not only about any library, make an objective and
-directioned question and you'll have a more developed answer.
-
-Some examples of good question would be:
-
-> Have you looked at the **Django's request router**?
-
-&nbsp;
-
-> Have you looked at the **organization of servers, requests and handlers in**
-> **Twisted**?
-
-Do not ask about how the design of complete projects compare the design of this
-whole proposal, because I might not have the time to review the other's whole
-project. There's the risk that I'd skip the part of the other project that
-you're really interested in too. Please keep the questions directioned.
-
-It would be even better if you objectively mention names, then my research
-would be faster and you'd have an answer faster.
-
-And try to check if your suggestion fits well in the proposal for an async
-library to save me the time to answer the several questions that I hope to
-receive. Anyway, I'll certainly respect any questions and try to give an
-insightful answer and possibly modify this proposal given the suggested
-improvement.
-
 ### cpp-netlib
 
 The project has the nice feature of customize the handler's type based on a
@@ -269,6 +241,34 @@ abstract differences between a server-incoming http request and a
 client-outgoing http request. It's still a good idea to keep them separate
 objects, because they serve different purposes (asynchronous reading from a
 multitude of backends and asynchronous writing).
+
+### Others
+
+If you have specific concerns, not only about any library, make an objective and
+directioned question and you'll have a more developed answer.
+
+Some examples of good question would be:
+
+> Have you looked at the **Django's request router**?
+
+&nbsp;
+
+> Have you looked at the **organization of servers, requests and handlers in**
+> **Twisted**?
+
+Do not ask about how the design of complete projects compare the design of this
+whole proposal, because I might not have the time to review the other's whole
+project. There's the risk that I'd skip the part of the other project that
+you're really interested in too. Please keep the questions directioned.
+
+It would be even better if you objectively mention names, then my research
+would be faster and you'd have an answer faster.
+
+And try to check if your suggestion fits well in the proposal for an async
+library to save me the time to answer the several questions that I hope to
+receive. Anyway, I'll certainly respect any questions and try to give an
+insightful answer and possibly modify this proposal given the suggested
+improvement.
 
 ### std::future
 
