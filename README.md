@@ -242,6 +242,78 @@ client-outgoing http request. It's still a good idea to keep them separate
 objects, because they serve different purposes (asynchronous reading from a
 multitude of backends and asynchronous writing).
 
+### [pion](https://github.com/cloudmeter/pion)
+
+The project shares some design considerations with cpp-netlib and they won't be
+repeated here.
+
+The iterator-based interface in some places is quite nice and can help to avoid
+a new allocated container. The query string within urls is an example, but
+`pion::http::request::get_queries` returns an `ihash_multimap`, not a custom
+wrapper that would play a role similar to the `string_view` proposal.
+
+The complete separation of response pieces (set status code and reason phrase
+within two different expressions) looks good, but I don't want to make the API
+more difficult than already is (for the user writing handlers, the user writing
+backends and me writing even more complex documentation). This API works in
+pion, but it isn't very asynchronous.
+
+One "higher-level" abstraction of pion to register handlers (the request
+router/dispatcher) is the use of a tree-like based resource dispatching. Under
+this model, you can have several handlers and each one will handle a resource
+under one path. For instance, you could have a handler for "/" and a handler for
+"/index.html". If there is no registered handler for requested resource, the
+handler for the parent resource is used.
+
+Now, before I proceed, documentation isn't very complete and info can be partly
+innacurate, but I'll present it anyway because it exposes an interesting design
+characteristic to keep in mind. And one more thing is that even if the comments
+aren't very accurate, they aren't entirely untrue, because I tested them.
+
+One problem with the tree-based approach is that you cannot compose a chain of
+handlers to help the server. What if you change the url/resource attribute of
+the request to allow the same handler be used for "/" and "/index.html"? Well,
+this is considered a special for pion (as I understand) and the way to go is to
+use `pion::http::server::add_redirect` member function. But then the control is
+too "static" (in the sense of opposite to dynamic) and handlers cannot have much
+control over the dispatching behaviour. Suppose you want to add a handler to
+serve from plugins and, if a plugin for the requested resource cannot be found,
+proceed to the next handler, the static file handler. Under this example, the
+tree style wouldn't fail completely, because you could still chain the handlers
+by adding specific knowledge about the remaining handler within the plugin-based
+handler (not orthogonal, not clear separation of responsibilities, difficult to
+change and the list goes on). The tree style approach would fail if the
+plugin-based is outside of your control and cannot be changed (now you'll add a
+new level of workarounds to emulate the middleware style). You just won't get
+much cooperation among handlers using the tree style of resources approach.
+
+Using the middleware style the possibilities are quite interesting. You could,
+for instance, register handlers to a vhost under the "/john_lennon" path and use
+another handler to (1) check if the vhost is being used and (2) conditionally
+prepend the "/john_lennon" prefix internally (change visible only to the server
+and not to the remote user, eg. avoid extra network traffic). Of course there
+are times where explicit redirects are wanted, but they are supported under the
+middleware style model too.
+
+Well, previously I mentioned that the tree-based was a "problem", but, in fact,
+it isn't. The consequences of the tree-based approach aren't problems, but a
+consequence of the adopted "style". This is what the tree-based approach is...
+a style. This style has the nice advantage of clearly separating different
+handlers, a very useful feature to avoid _spaghetti code_. Of course it's
+possible to achieve separation under the oher design (middleware style) by
+allowing _nested_ routers/dispatchers. The router itself is a handler, then it's
+natural to nest routers together. Also, it's possible to implement the tree
+style on top of the middleware style, but the opposite is a tough task. Even
+advocating the _middleware_ style, I will propose to **not** deliver these
+routers in the core library submitted to boost (yet!), but to use a raw handling
+mechanism which both styles (and more to come) can use. A modular design,
+remember?
+
+Another thing worth mentioning is the scheduler. Again, the project isn't very
+documented, turning the idea of custom schedulers almost useless. But the
+concept of a scheduler is well known and I'll take a closer look on how this
+concept is used within pion later.
+
 ### Others
 
 If you have specific concerns, not only about any library, make an objective and
