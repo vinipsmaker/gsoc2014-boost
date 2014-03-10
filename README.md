@@ -51,7 +51,7 @@ than me, then I'll quote it.
 > 5. Reuse existing std or Boost components, such as Boost.Asio.
 
 -- Bjorn Reese, [on the boost mailing list](
-http://article.gmane.org/gmane.comp.lib.boost.devel/249771)
+http://lists.boost.org/Archives/boost/2014/03/212072.php)
 
 ## Design considerations
 
