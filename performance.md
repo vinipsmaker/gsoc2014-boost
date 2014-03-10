@@ -41,3 +41,19 @@ good hash algorithm would be:
   and possibly develop a new algorithm. Such idea is outside of the scope of
   this proposal, but this data could at least help benchmarking considered
   choices.
+
+### `boost::http::server::request::uri()`
+
+To correctly answer the HTTP request, the uri always must be parsed. It should
+be reasonable, then, to directly store the parsing result instead the naked uri.
+This change would avoid the need to parse the uri multiple times within the
+chain of handlers. The drawback of this approach (always parse the uri) is the
+impossibility to use other parsing methods (which isn't necessary anyway). To
+overcome this drawback, one solution would be to embed both objects (raw uri and
+`std::experimental::uri` into the request object), but this change doesn't offer
+much value and still introduce new memory overhead to every request object (a
+bad feature for embedded devices). A second solution would be to pass the
+parsing result along the chain of handlers. This concern needs some benchmark
+and a more carefully done analysis that only will be done after part of the
+implementation is complete. Thus, it's unlikely that more thought will be put
+here during this design/interface effort/phase.

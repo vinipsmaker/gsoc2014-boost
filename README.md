@@ -345,6 +345,30 @@ receive. Anyway, I'll certainly respect any questions and try to give an
 insightful answer and possibly modify this proposal given the suggested
 improvement.
 
+### SG4
+
+SG4 is the name of the [responsible working group for networking within the
+next C++ standard](http://isocpp.org/std/the-committee). Some of their proposals
+are related to abstractions that ASIO already provides, such as representation
+for IP addresses. There are also proposals that aren't directly interesting for
+this proposal, but there is also one interesting proposal that may
+affect/inspire the design documented here. This interesting proposal is the
+N3625, which documents an URI library for C++.
+
+There is a [standalone version of the URI library a github](
+https://github.com/cpp-netlib/uri). Details about how this document/library
+impacts this proposal will be found below, where appropriate. Currently there is
+no need to make use of this proposal or to mirror it in boost, but this feeling
+might change while I finish this design document.
+
+<!-- if proposal becomes too greedy and requires a ready uri implementation:
+
+The general plan is to make use of this library, while it's kept updated and
+possibly mirror its interface in boost, while it isn't merged with the C++
+standard.
+
+-->
+
 ### std::future
 
 std::future approach will make the life of developers easier once the `await`
@@ -497,6 +521,16 @@ public:
 
 ### The `boost::http::server::request` class
 
+The SG4's uri library makes use of `optional<string_view>` attributes to expose
+URI components. `string_view`, being a non-owning reference, requires the
+original uri to be accessible. Thus, `request::uri()` should return a string.
+
+<!-- TODO: check Unicode/ASCII characteres within the HTTP and URI protocols -->
+
+I'm still thinking about whether template based on the uri type should be used
+or not, but I want to come with a few arguments before document the decision
+here.
+
 The object **MUST** not be destroyed, cleaned, reseted or recycled by the
 backend or any other entity after the `close` event is reached. This action is
 only allowed **after** the `close` event of the associated `response` object. All
@@ -523,6 +557,8 @@ public:
      * status require action from the server.
      */
     bool continue_required() const;
+
+    string uri();
 };
 }
 }
@@ -737,6 +773,10 @@ Initially it would be a typedef for an `unordered_multimap<string, string>`, but
 I intend to discuss this concern further and possibly run a series of
 benchmarks. A custom `KeyEqual` functor will take care of case insensitive keys
 while discussions about the right container are ongoing.
+
+**NOTE:** The SG4's uri library also face the problem to define a
+case-insensitive interface and the chosen solution was to convert them to lower
+case upon normalization.
 
 ### The `boost::http::status_code` enum
 
