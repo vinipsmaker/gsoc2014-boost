@@ -7,6 +7,9 @@ proposed design in the main document.
 
 ### The `boost::http::server::backend` interface
 
+<!-- TODO: update paragraph below according to decision that will exist related
+to that <request,response> vs <socket-like> thing -->
+
 An unified interface for _request_s pools and _response_s pools was chosen to
 decrease the overhead of indirect function calls. Also, it's possible to compose
 different pools into one, if the user wants, but the opposite choice would imply

@@ -505,6 +505,53 @@ A FastCGI situation would be similar to the previous one, but the
 `boost::http::server::fastcgi`, whose construction would be different. The rest
 of the code (the handlers) would remain untouched and compatible.
 
+### The `boost::http::server::backend_pool` interface
+
+I think this class needs a better name, but I don't like `request_response_pool`
+either. Moving on...
+
+<!-- TODO: below paragraph -->
+
+And actually, maybe this interface (together with the rest of the proposal) may
+be unimplementable, **but** only because I didn't choose a solution for
+integrating `request` + `response` yet. I'm presenting the interface anyway,
+because you'll find the idea/concept useful.
+
+The possibility to control object recycling is the idea behind this abstraction.
+You could use a simple pool that allocates and deallocates objects immediately
+on embedded devices and a pool that keeps a cache ready to be used (thus
+avoiding too many allocations) and only free it a little after some time of
+inactivity. In fact, it's even possible to implement a `backend_pool` that
+accepts an allocator.
+
+It's recommended that a new `boost::http::server::backend` implementation should
+allow a pointer to a pool object to be passed on the constructor. Such `backend`
+is free to use any pool (or no at all) it wants, but the use of
+`boost::http::server::simple_backend_pool` is recommended.
+
+```
+namespace boost {
+namespace http {
+namespace server {
+class backend_pool
+{
+public:
+    virtual ~backend_pool() {}
+
+    virtual void push(pair<request*,response*> object) = 0;
+    virtual pair<request*,response*> pop() = 0;
+};
+}
+}
+}
+```
+
+### The `boost::http::server::simple_backend_pool` implementation
+
+Just an implementation for the `boost::http::server::backend_pool` interface
+that allocates/deallocates objects immediately/as-soon-as-requested. It's the
+recommended implementation when the user doesn't choose one explicitly.
+
 ### The `boost::http::server::backend` interface
 
 It's unlikely that the user will want to implement this interface. The user will
@@ -513,24 +560,20 @@ be discouraged by this warning. This is just a friendly reminder that the plan
 is to have most of the common backends integrated and general, then he still
 will be able to use by just adjusting some parameters, if ever needed.
 
-I'm thinking about separating pool related functions in a second interface,
-inheriting from this one.
-
-I'll also define the pool interface, that should just be a convenient class from
-where you can get objects or return unused ones.
-
-`handler_type` is a runtime bound functor for several reasons. One of the
-reasons is to give freedom for the user to use any functor-like object as
-argument. This requirement could also be achieved through templates, but backend
-is meant to be an interface for HTTP message producers and function templates
-cannot be virtual. Also, the backend would need type erasure to handle all the
-different handlers meeting the required signature anyway.
+`handler_type` is a runtime bound functor (`std::function`) for several reasons.
+One of the reasons is to give freedom for the user to use any functor-like
+object as argument. This requirement could also be achieved through templates,
+but backend is meant to be an interface for HTTP message producers and function
+templates cannot be virtual. Also, the backend would need type erasure to handle
+all the different handlers meeting the required signature anyway.
 
 The proposal for executors and schedulers (n3731) face a similar problem and
 they've chosen the same solution, `std::function`.
 
-It's guaranteed that the arguments passed to the `handler` will exist as long as
-`response` is not finished.
+It's guaranteed that the arguments passed to the `handler` (a functor that will
+receive `request` and `response` as arguments) will exist as long as `response`
+is not finished and `response` is only finished when the user call the `end`
+function, then the lifetime is intuitive, easy to use and deterministic enough.
 
 ```cpp
 namespace boost {
@@ -542,7 +585,17 @@ public:
 
     // ### Operations that mirror the ones within request object ###
 
-    // TODO
+    virtual void read(request &r) = 0;
+
+    virtual void end(request &r) = 0;
+
+    virtual void async_read(request &r,
+                            std::function<void(boost::system::error_code)>
+                            callback) = 0;
+
+    virtual void async_end(request &r,
+                           std::function<void(boost::system::error_code)>
+                           callback) = 0;
 
     // ### Operations that mirror the ones within response object ###
     // see the response class for more details
@@ -651,6 +704,8 @@ callbacks for later events exist.
 
 I need to think more before decide if implicit buffering will happen. So, the
 signature to register the data callback may change.
+
+> TODO: expose buffer
 
 ```cpp
 namespace boost {
