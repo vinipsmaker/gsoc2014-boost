@@ -177,7 +177,7 @@ at all.
 
 Django doesn't has a great concern on async operations and scalability, but
 their developers had developed solutions for common problems and they spent time
-to improve secutity. The resulting documentation of the project become a nice
+to improve security. The resulting documentation of the project become a nice
 place to look for what are the next problems to solve once we have a core HTTP
 server library in Boost and the documentation also taught me some nice things
 about security.
