@@ -289,11 +289,11 @@ a new allocated container. The query string within urls is an example, but
 `pion::http::request::get_queries` returns an `ihash_multimap`, not a custom
 wrapper that would play a role similar to the `string_view` proposal.
 
-The complete separation of response pieces (set status code and reason phrase
-within two different expressions) looks good, but I don't want to make the API
-more difficult than already is (for the user writing handlers, the user writing
-backends and me writing even more complex documentation). This API works in
-pion, but it isn't very asynchronous.
+The complete separation of response pieces (eg. set status code and reason
+phrase within two different expressions/function-calls) looks good, but I don't
+want to make the API more difficult than already is (for the user writing
+handlers, the user writing backends and me writing even more complex
+documentation). This API works in pion, but it isn't very asynchronous.
 
 One "higher-level" abstraction of pion to register handlers (the request
 router/dispatcher) is the use of a tree-like based resource dispatching. Under
