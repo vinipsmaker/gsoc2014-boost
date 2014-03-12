@@ -354,6 +354,30 @@ documented, turning the idea of custom schedulers almost useless. But the
 concept of a scheduler is well known and I'll take a closer look on how this
 concept is used within pion later.
 
+### POCO
+
+I took a look at some gritty details on POCO http server and the design looks
+mostly okay, but it doesn't have a strong focus on asynchronous operations like
+ASIO. The interface itself doesn't resemble ASIO at all (eg. by making use of
+things like std::istream for Poco::Net::HTTPRequest::read).
+
+Another concern would be support for other backends, but looking at the
+documentation, it's possible to see a highly separate hierarchy of abstractions
+that plays well with multi-threaded design, [modern HTTP features](
+https://github.com/pocoproject/poco/blob/492317224154a21407ba346f6e81471561e45250/Net/src/WebSocket.cpp#L142-162)
+and would allow multiple backends (but I didn't find any other ready backends,
+then **maybe** it means a not easy-to-implement interface was defined).
+
+The only real problem was the lack of a highly asynchronous interface, but their
+work would still be useful to help define abstractions (and their hierarchy). Of
+course an ASIO-ification should happen in the process.
+
+[This is a nice page to see POCO's look-and-feel](
+http://pocoproject.org/docs/00100-GuidedTour.html#5).
+
+Said all that, Poco's focus seems to be any networking application and is pretty
+large. There's even database, xml and zip abstractions.
+
 ### Others
 
 If you have specific concerns about any library make an objective and
