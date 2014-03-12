@@ -356,7 +356,7 @@ concept is used within pion later.
 
 ### Others
 
-If you have specific concerns, not only about any library, make an objective and
+If you have specific concerns about any library make an objective and
 directioned question and you'll have a more developed answer.
 
 Some examples of good question would be:
