@@ -210,21 +210,44 @@ It's just the nice C++ style...:
 
 However, the task to implement a protocol like HTTP doesn't really introduce the
 need for generality. It'd introduce undesired complexity to the definition of
-new backends (HTTP messages producers). What I propose is to, in the future,
-provide a templated zero-overhead interface to the internal HTTP parser. This
-option fits well in the design of embedded projects, but doesn't propagate the
-disadvantages of a coupled HTTP parser and message producer to the rest of the
-library. I'll use templates only in a very few places that don't affect the code
-of backends or HTTP handlers.
+new backends (HTTP messages producers). In fact, cpp-netlib is so overly
+generalized that request and response types, that require no generalization, are
+nested within template classes, introducing even more unnecessary difficult to
+create general handlers. Now, not only the handler registering is "generalized",
+but also the arguments of the handling function, whose types comply with
+concepts that benefits from no generalization at all. The `request` class is
+nested within the `server` template class, but [the server template takes in a
+single template parameter](
+http://cpp-netlib.org/0.11.0/reference/http_server.html) that cannot specialize
+**ANY** of the generic request concepts, such as [R::string_type or
+R::headers_container_type](
+http://cpp-netlib.org/0.11.0/reference/http_request.html#pod-server-request-concept).
+To specialize such class, you'd need (almost) reimplement your own
+`netlib::network::http::server`. It doesn't look too benefical to the user.
+
+What I propose is to, _in the future_ (eg. outside of the scope of this
+proposal), provide a templated zero-overhead interface to the internal HTTP
+parser. This option fits well in the design of embedded projects, but doesn't
+propagate the disadvantages of a coupled HTTP parser and message producer to the
+rest of the library.
+
+I'll use templates only in a very few places that don't affect the code of
+backends or HTTP handlers. A few places where I think templates would have a
+better use within this library would be in backend implementations (not
+interfaces) to control/tune some behaviour through policy tags. And backends
+aren't going to be so intrusive in this proposal, then changes to backend
+implementations don't require non-related parts to be "prepared".
 
 One problem with cpp-netlib is the fact that they choose a design that made
 difficult to support some features like HTTP pipelining and support for other
 backends like FastCGI. The design presented here doesn't suffer this problem.
 
-Also, it seems that the lack of unification among the abstractions has been
-caused by a lower priority to include support for modern HTTP features and
-asynchronous operations in the earlier design. Even though HTTP is not that
-_modern_, but pretty stable actually.
+Also, it seems that the lack of unification (for instance, there is one
+"synchronous" server and one "asynchronous" server that are _mostly_ providing
+the same responsibilities) among the abstractions has been caused by a lower
+priority to include support for modern HTTP features and asynchronous operations
+in the earlier design. Even though HTTP is not that _modern_, but pretty stable
+actually.
 
 Most of the templated nature of cpp-netlib comes around the `request` concept,
 which doesn't really need generality. Within cpp-netlib, this concept is defined
@@ -241,6 +264,20 @@ abstract differences between a server-incoming http request and a
 client-outgoing http request. It's still a good idea to keep them separate
 objects, because they serve different purposes (asynchronous reading from a
 multitude of backends and asynchronous writing).
+
+One generality within the `request` object lies in some of its attributes, like
+`R::string_type` (used in `r.method` within [cpp-netlib](
+http://cpp-netlib.org/0.11.0/reference/http_request.html#pod-server-request-concept))
+and `R::headers_container_type` (used in `r.headers` wihin [cpp-netlib](
+http://cpp-netlib.org/0.11.0/reference/http_request.html#pod-server-request-concept)),
+but they are just containers for usual network resources found in HTTP messages
+and should reflect this nature (such as using a string of 8-bit char and a
+possibly a new `headers` container). Also, this reminds that iterators were
+created to avoid N * M implementations, a situation that would pretty much
+happen here if you don't go all the way with templates and thus would create an
+overly unnecessary complex template-based design that would pretty much kill the
+possibility to have plugin-based handlers implemented by different teams while
+different backends (builtin server, FastCGI, ...) are used.
 
 ### [pion](https://github.com/cloudmeter/pion)
 
