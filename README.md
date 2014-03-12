@@ -449,6 +449,9 @@ parser later are:
   `qsort` vs C++'s `sort`). This isn't really a big problem here.
 * Ryan Dahl's parser doesn't support arbitrary HTTP method names. This is a big
   concern on long-term and is a motivator to change the parser later.
+* A parser interface exposed to the user will benefit some projects for embedded
+  devices, but the C-based Ryan Dahl's HTTP parser interface can be way better
+  exploring C++ and Boost features.
 
 The reason to use a ready parser for now is to focus on more important aspects
 of the project in the beginning like API, scalability and flexibility.
