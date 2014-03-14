@@ -373,7 +373,12 @@ work would still be useful to help define abstractions (and their hierarchy). Of
 course an ASIO-ification should happen in the process.
 
 [This is a nice page to see POCO's look-and-feel](
-http://pocoproject.org/docs/00100-GuidedTour.html#5).
+http://pocoproject.org/docs/00100-GuidedTour.html#5). Due to the too intrusive
+design ([need to implement specificy interfaces, even if only one point of
+flexibility is required](http://isocpp.org/blog/2014/03/callback) such as
+`TimeRequestHandler::handleRequest`), the code became more verbose than
+necessary. Compare the code with this [other one](
+https://github.com/d5/node.native#sample-code), also written in C++.
 
 Said all that, Poco's focus seems to be any networking application and is pretty
 large. There's even database, xml and zip abstractions.
