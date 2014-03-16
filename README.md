@@ -711,6 +711,27 @@ need to study a bit further to check that. If ASIO can help me enough, then I
 think it'll be possible to implement them all, but if not, I want at least to
 make sure that more models can be supported in the future without API breakage.
 
+## Deliverables
+
+* A core set of abstractions that can be used to create HTTP producers and
+  consumers to allow different backends (FastCGI, CoAP, ...).
+  * These abstractions will allow queryable properties like "native-stream" to
+    avoid security problems and other class of problems.
+* A lower-level interface that provides a "HTTP socket" to create HTTP built in
+  servers with as low overhead as **correctly** we can.
+* Provide a HTTP producer that uses the interface described on the item above.
+* Provide the implementation of a file server to aid on benchmarking.
+* All abstractions provided should support modern HTTP features (chunking,
+  pipelining, continue, upgrade).
+* All abstractions provided will expose an highly async interface built on top
+  of Boost ASIO.
+* Other Boost quality assurance items.
+  * Exception safe.
+  * Linear scalable.
+  * Validation.
+  * Test suite.
+  * Extensive documentation.
+
 ## Extra features
 
 The implementation of a HTTP server isn't very challenging. The biggest problem
