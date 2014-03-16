@@ -534,53 +534,6 @@ A FastCGI situation would be similar to the previous one, but the
 `boost::http::server::fastcgi`, whose construction would be different. The rest
 of the code (the handlers) would remain untouched and compatible.
 
-### The `boost::http::server::backend_pool` interface
-
-I think this class needs a better name, but I don't like `request_response_pool`
-either. Moving on...
-
-<!-- TODO: below paragraph -->
-
-And actually, maybe this interface (together with the rest of the proposal) may
-be unimplementable, **but** only because I didn't choose a solution for
-integrating `request` + `response` yet. I'm presenting the interface anyway,
-because you'll find the idea/concept useful.
-
-The possibility to control object recycling is the idea behind this abstraction.
-You could use a simple pool that allocates and deallocates objects immediately
-on embedded devices and a pool that keeps a cache ready to be used (thus
-avoiding too many allocations) and only free it a little after some time of
-inactivity. In fact, it's even possible to implement a `backend_pool` that
-accepts an allocator.
-
-It's recommended that a new `boost::http::server::backend` implementation should
-allow a pointer to a pool object to be passed on the constructor. Such `backend`
-is free to use any pool (or no at all) it wants, but the use of
-`boost::http::server::simple_backend_pool` is recommended.
-
-```
-namespace boost {
-namespace http {
-namespace server {
-class backend_pool
-{
-public:
-    virtual ~backend_pool() {}
-
-    virtual void push(pair<request*,response*> object) = 0;
-    virtual pair<request*,response*> pop() = 0;
-};
-}
-}
-}
-```
-
-### The `boost::http::server::simple_backend_pool` implementation
-
-Just an implementation for the `boost::http::server::backend_pool` interface
-that allocates/deallocates objects immediately/as-soon-as-requested. It's the
-recommended implementation when the user doesn't choose one explicitly.
-
 ### The `boost::http::server::backend` interface
 
 It's unlikely that the user will want to implement this interface. The user will
@@ -685,19 +638,6 @@ public:
 ```
 
 > TODO
-
-<!--
- choose interface for object recycling and consider how it could be done
- optional to fit well in memory-constrained devices
-
- The user is responsible to maintain the lifetime ot the \p pool object
- while the request wasn't finished. I thought about use a reference
- instead pointer, but I wanted to make explicit the fact that the pool
- may be used other times. I'm not satisfied with this design yet and I
- plan to improve it.
-
- pool_type *pool
- -->
 
 ### The `boost::http::server::request` class
 
