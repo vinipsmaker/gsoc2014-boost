@@ -487,6 +487,21 @@ of the project in the beginning like API, scalability and flexibility.
 
 ## The proposal
 
+This proposal defines not only an initial interface, but also an usable (in the
+sense of applicability) core set of abstractions. Said that, interface is very
+subject to change. The implementation would very well give new insights about
+performance and its availability would be a playground for applications to
+stress test and improve the flexibility.
+
+Usual tasks would be to test correctness and exception-safety of the
+implementation, define and document guarantees, so an useful application can be
+created without undefined behaviour and continue to work on future versions.
+All tests should be automated to retain usefulness.
+
+Small applications should be created to help benchmark and spot bottleneck
+points. Given that, at least a file server will be created for the proposal. You
+can find details about the proposal below.
+
 ### namespace
 
 All abstractions presented here should live, unless explicitly stated otherwise,
