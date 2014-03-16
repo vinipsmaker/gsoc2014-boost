@@ -229,7 +229,10 @@ What I propose is to, _in the future_ (eg. outside of the scope of this
 proposal), provide a templated zero-overhead interface to the internal HTTP
 parser. This option fits well in the design of embedded projects, but doesn't
 propagate the disadvantages of a coupled HTTP parser and message producer to the
-rest of the library.
+rest of the library. A second alternative, that may work as good as the parser
+interface and it **is** within the scope of this proposal, is the use of the
+proposed `boost::http::basic_socket` object (more details somewhere below,
+within the section after the analysis of other frameworks).
 
 I'll use templates only in a very few places that don't affect the code of
 backends or HTTP handlers. A few places where I think templates would have a
@@ -502,6 +505,11 @@ Small applications should be created to help benchmark and spot bottleneck
 points. Given that, at least a file server will be created for the proposal. You
 can find details about the proposal below.
 
+The proposal might be a little incomplete, but I hope it won't be a problem to
+understand the main ideas and I'll be available for any questions you might
+have. And besides being incomplete, it's a solid start for the project
+(including implementation work).
+
 ### namespace
 
 All abstractions presented here should live, unless explicitly stated otherwise,
@@ -516,464 +524,136 @@ https://en.wikipedia.org/wiki/Blind_men_and_an_elephant) syndrome.
 
 #### The built in HTTP server way
 
-1. You open Firefox and make a request.
-2. The `boost::http::server` object reacts upon some unspecified asio's event.
-3. The `boost::http::server` object acquire a new or reused
-   `boost::http::server::request` object.
-4. The `boost::http::server::server` object creates or reuse an internal HTTP
-   parser object and tie it with the recently acquired
-   `boost::http::server::request` object.
-5. Once the `boost::http::server::request` object is ready -- it happens when
-   enough data (all headers) was parsed -- the `boost::http::server::request`
-   object and its response object are announced to the programmer.
-6. The programmer's code can then inspect input data through the `request`
-   object and the several parsers that receive it as input (including session
-   support) and reply with the `writeHead(int,string)`, `write(vector<uint8_t>)`
-   and `end()` methods of the `response` object.
-7. All write/output operations from the `response` object will delegate the real
-   work to the appropriate backend, that was chosen during object construction.
-   Similarly, the backend will feed all data received through the `request`
-   object.
+1. Programmer's code instantiated a `boost::http::basic_message<unspecified>`
+   object and instructed `boost::http::basic_socket_acceptor` to fill its object
+   and call a callback when a new message is ready.
+2. You open Firefox and make a request.
+3. The `boost::http::basic_socket_acceptor` reacts and call your callback upon
+   some unspecified asio's event.
+4. You use `boost::http::basic_socket` API to respond to the request.
+5. The `boost::http::basic_socket` object will rely on the
+   `boost::http::basic_socket_acceptor` object to rely on ordering guarantees
+   (HTTP pipelining) and the reply will be eventually sent.
 
-   The `request` and `response` objects also provide some very few high-level
-   information about the backend, such as "native-stream" property if HTTP
-   chunking or similar is provided or "upgrade-possible" if it's possible to
-   upgrade to another protocol (such as WebSocket). The purpose of such exported
-   info is to avoid hanging the application in some backends (such as trying to
-   live-stream video to a HTTP/1.0 connection).
+Notes:
 
-#### The FastCGI way
+* `boost::http::basic_message<unspecified>` is ready for the user callback when
+  enough data (all headers) was gathered.
+* The programmer's code can then inspect input data through the `basic_message`
+  object and the several parsers that receive it as input (including session
+  support) and reply with the `write_start_line()`, `write(boost::asio::buffer)`
+  and `end()` methods of the `message` object.
 
-A FastCGI situation would be similar to the previous one, but the
-`boost::http::server::server` would be replaced by
-`boost::http::server::fastcgi`, whose construction would be different. The rest
-of the code (the handlers) would remain untouched and compatible.
+### The `boost::http::basic_socket` abstraction
 
-### The `boost::http::server::backend` interface
+This abstraction is being proposed to improve the message passing fundamental
+design, abstracting differences between request and response messages away. The
+only fundamental difference between request and response messages is the _start
+line_. The `basic_socket` object should store the start line (excluding
+`"\r\n"`) without trying to decode its meaning, leaving this task for a
+specialized abstraction of the appropriate HTTP message type (request or
+response).
 
-It's unlikely that the user will want to implement this interface. The user will
-probably want to use one of the provided backends. However, the user shouldn't
-be discouraged by this warning. This is just a friendly reminder that the plan
-is to have most of the common backends integrated and general, then he still
-will be able to use by just adjusting some parameters, if ever needed.
+This abstraction should resemble `boost::asio::basic_socket`. Below you'll only
+find the declarations for the sync version of the API. This is only done for
+simplicity and the async versions are the main focus of this proposal. One thing
+missing from this API is server-push behaviour (for HTTP/2.0) and it'll be added
+later.
 
-`handler_type` is a runtime bound functor (`std::function`) for several reasons.
-One of the reasons is to give freedom for the user to use any functor-like
-object as argument. This requirement could also be achieved through templates,
-but backend is meant to be an interface for HTTP message producers and function
-templates cannot be virtual. Also, the backend would need type erasure to handle
-all the different handlers meeting the required signature anyway.
+Three levels (`basic_message`, `basic_socket` and `basic_socket_acceptor`) are
+used instead two to better support HTTP pipelining (and even multiplexing on
+HTTP/2.0). `basic_message` represents a single HTTP message, while
+`basic_socket` represents a socket stream that can be used to send multiple HTTP
+messages.
 
-The proposal for executors and schedulers (n3731) face a similar problem and
-they've chosen the same solution, `std::function`.
+Because HTTP imposes a clear separation of client and server, a "peer"
+architecture where everyone "is" client and server like WebSocket or JSON-RPC
+cannot be adopted. Thus, `basic_socket_acceptor` will "emit" `basic_message`
+objects that cannot be used to send new requests over the channel.
+`basic_socket_acceptor` should handle pipelining of incoming data and
+`basic_socket` should handle ordering/pipelining of outgoing data.
 
-It's guaranteed that the arguments passed to the `handler` (a functor that will
-receive `request` and `response` as arguments) will exist as long as `response`
-is not finished and `response` is only finished when the user call the `end`
-function, then the lifetime is intuitive, easy to use and deterministic enough.
-
-```cpp
-namespace boost {
-namespace http {
-namespace server {
-class backend {
-public:
-    virtual ~backend() {}
-
-    // ### Operations that mirror the ones within request object ###
-
-    virtual void read(request &r) = 0;
-
-    virtual void end(request &r) = 0;
-
-    virtual void async_read(request &r,
-                            std::function<void(boost::system::error_code)>
-                            callback) = 0;
-
-    virtual void async_end(request &r,
-                           std::function<void(boost::system::error_code)>
-                           callback) = 0;
-
-    // ### Operations that mirror the ones within response object ###
-    // see the response class for more details
-
-    virtual void write_continue(response &r) = 0;
-
-    virtual void open(response &r, boost::http::status_code) = 0;
-    virtual void open(response &r, int status_code, string reason_phrase) = 0;
-
-    virtual void write_head(response &r, boost::http::status_code) = 0;
-    virtual void write_head(response &r, int status_code,
-                            string reason_phrase) = 0;
-
-    virtual void write(response &r, const boost::asio::buffer &buffer) = 0;
-
-    virtual void write_trailer(response &r, const header_type &buffer) = 0;
-    virtual void write_trailers(response &r, const headers_type &buffer) = 0;
-
-    virtual void end(response &r) = 0;
-
-    virtual void async_write_continue(response &r,
-                                      std::function<void(boost::system::error_code)>
-                                      callback) = 0;
-
-    virtual void async_open(response &r, boost::http::status_code,
-                            std::function<void(boost::system::error_code)>
-                            callback) = 0;
-    virtual void async_open(response &r, int status_code, string reason_phrase,
-                            std::function<void(boost::system::error_code)>
-                            callback) = 0;
-
-    virtual void async_write_head(response &r, boost::http::status_code,
-                                  std::function<void(boost::system::error_code)>
-                                  callback) = 0;
-    virtual void async_write_head(response &r, int status_code,
-                                  string reason_phrase,
-                                  std::function<void(boost::system::error_code)>
-                                  callback) = 0;
-
-    virtual void async_write(response &r, const boost::asio::buffer &buffer,
-                             std::function<void(boost::system::error_code)>
-                             callback) = 0;
-
-    virtual void async_write_trailer(response &r, const header_type &buffer,
-                                     std::function<void(boost::system::error_code)>
-                                     callback) = 0;
-    virtual void async_write_trailers(response &r, const headers_type &buffer,
-                                      std::function<void(boost::system::error_code)>
-                                      callback) = 0;
-
-    virtual void async_end(response &r,
-                           std::function<void(boost::system::error_code)>
-                           callback) = 0;
-};
-}
-}
-}
-```
-
-> TODO
-
-### The `boost::http::server::request` class
-
-The SG4's uri library makes use of `optional<string_view>` attributes to expose
-URI components. `string_view`, being a non-owning reference, requires the
-original uri to be accessible. Thus, `request::uri()` should return a string.
-
-<!-- TODO: check Unicode/ASCII characteres within the HTTP and URI protocols -->
-
-I'm still thinking about whether template based on the uri type should be used
-or not, but I want to come with a few arguments before document the decision
-here.
-
-The object **MUST** not be destroyed, cleaned, reset or recycled by the backend
-or any other entity after the `end` event is reached. This action is only
-allowed **after** the `end` event of the associated `response` object. All
-internal backends give this guarantee and failing to comply with it triggers
-undefined behaviour.
-
-The pair of request and response only is fed to the user once all headers are
-collected. This behaviour is chosen because (1) the http parser itself won't
-know how to properly handle the connection while all headers aren't received
-(eg. body might use fixed lenth or streaming interface, host header might be
-missing, whether connection should or not close after response, ...) and (2) the
-user itself can only take a proper action once all headers are received (eg.
-file server may need the correct range, home page might need cookies, ...). This
-is also the behaviour adopted on node.js.
-
-Because request objects are always delivered with `headers` ready, only
-callbacks for later events exist.
-
-<!-- TODO: implicit buffering -->
-
-I need to think more before decide if implicit buffering will happen. So, the
-signature to register the data callback may change.
-
-> TODO: expose buffer
+The design might be refined later. You should also notice that `Protocol`
+concept isn't defined, because the precise communication (in the sense of
+objects communication and not network communication) isn't completely defined,
+but this is this less relevant for a proposal submission and it'll be done
+during the implementation.
 
 ```cpp
 namespace boost {
 namespace http {
-namespace server {
-class request {
-public:
-    request(boost::http::server::backend &backend);
-
-    /**
-     * Check if request include `100-continue` in the _Expect_ header. It's just
-     * a convenient method that doesn't imply backend access overhead.
-     *
-     * The backend access will only happen in the
-     * `boost::http::server::response::write_continue`. See the mentioned
-     * function for more details.
-     *
-     * The name _required_ is used instead _supported_, because a 100-continue
-     * status require action from the server.
-     */
-    bool continue_required() const;
-
-    /**
-     * TODO: Further define this function/decision. Even if HTTP/1.1 do allow
-     * upgrade, not all backends will provide it. How to integrate it? Further
-     * research.
-     */
-    bool upgrade_required() const;
-
-    string uri();
-
-    // ### SYNC VERSIONS ###
-
-    void read();
-
-    void end();
-
-    // ### END OF SYNC VERSIONS ###
-
-    // ### ASYNC VERSIONS ###
-
-    void async_read(std::function<void(boost::system::error_code)> callback);
-
-    void async_end(std::function<void(boost::system::error_code)> callback);
-
-    // ### END OF ASYNC VERSIONS ###
-};
-}
-}
-}
-```
-
-> TODO
-
-### The `boost::http::server::response` class
-
-One HTTP response message is made of a status line (HTTP version, status code
-and human readable arbitrary status message), some headers and a body (possibly
-streamable).
-
-The HTTP version on the status line is responsibility of the backend. The user
-should explicitly pass an integer status code and a reason phrase or use a valid
-`boost::http::status_code` value to let the server guess a reason phrase. The
-status line must be written before any other information and is responsibility
-of the user to call a function to write this message before any other function.
-Given this behaviour, it's appropriate to use the name `open` for this function,
-but `write_head` convenient functions are also provided.
-
-> Previously, there was a confusing paragraph here, but after a lot of thought
-> about the implications and several tests with ASIO, I decided the path that I
-> was choosing wasn't adequate to the ASIO model, which I even consider better
-> and the text/decision was removed.
-
-No matter if you use the blocking calls or the async calls, a minimum checking
-is done before dispatching the actions to the backend. The only error checking
-done at this stage is related to the order of the actions. Wrong order of
-actions are only caused by programming error (failing to comply with a
-precondition) and not related to exceptional events outside of programmer's
-control. A separate error_category is used only for this class of errors and
-could be used in automated tests to help in assuring the code quality.
-
-The headers are an acessible property of the `response` object and will be
-streamed just before the first chunk of the body is issued.
-
-This API abstracts several of the different HTTP behaviours, while it still
-allow an efficient implementation. The only non-efficient (or even impossible)
-implementation would be body streaming through HTTP/1.0 and some server to
-process communcation schemes where the backend is forced to buffer the whole
-data before the first piece of information is actually sent, but this API also
-exposes the `native_stream()` property to protect the user against such
-environments. Due to the previous mentioned fact and some others, it's possible
-that the server only will execute an action after the next actions are issued.
-Thanks to this fact, the user **SHOULDN'T** issue the next action inside the
-callback for a previous action. To help the user, order guarantee is mandated
-for all backends.
-
-Lastly, I renamed `close` to `end`, because (1) the backend won't actually close
-the socket (just the session) and (2) an unclean close/end may happen and an
-`async_close` may be desired, but there is no matching `async_close` in ASIO
-sockets, then a different name may be desired to help differentiate the two
-entities.
-
-![](response_state.png)
-
-```cpp
-namespace boost {
-namespace http {
-namespace server {
-/**
- * Represents the current state in the HTTP response.
- *
- * The picture response_state.png can help you understand this file.
+/** Represents a single HTTP message (a request or a response).
  */
-enum class response_state
+template<class Protocol>
+class basic_message
 {
-    /**
-     * This is the initial state.
-     *
-     * It means that the response object wasn't used yet.
-     *
-     * At this state, you can only issue the status line or issue a continue
-     * action, if continue is supported/used in this HTTP session. Even if
-     * continue was requested, issue a continue action is optional and only
-     * required if you need the request's body.
-     */
-    EMPTY,
-    /**
-     * This state is reached from the `EMPTY` state, once you issue a continue
-     * action.
-     *
-     * No more continue actions can be issued from this state.
-     */
-    CONTINUE_ISSUED,
-    /**
-     * This state can be reached either from EMPTY or `CONTINUE_ISSUED`.
-     *
-     * It happens when the status line is reached (through `open` or `write_head`).
-     */
-    STATUS_LINE_ISSUED,
-    /**
-     * This state is reached once the first chunk of body is issued.
-     *
-     * \warning
-     * Once this state is reached, it is no longer safe to access the
-     * `boost::http::server::response::headers` attribute, which is left in an
-     * unspecified state and might or might nor be used again by the backend.
-     * You're safe to access and modify this attribute again once the `FINISHED`
-     * state is reached, but the attribute will be at an unspecified state and
-     * is recommended to _clear_ it.
-     */
-    HEADERS_ISSUED,
-    /**
-     * This state is reached once the first trailer is issued to the backend.
-     *
-     * After this state is reached, it's not allowed to write the body again.
-     * You can either proceed to issue more trailers or `end` the response.
-     */
-    BODY_ISSUED,
-    /**
-     * The response is considered complete once this state is reached. You
-     * should no longer access this response or the associated request objects,
-     * because the backend has the freedom to recycle or destroy the objects.
-     */
-    FINISHED
-};
-
-class response {
 public:
-    response(boost::http::server::backend &backend,
-             bool native_stream);
+    string_type start_line;
+    headers_type headers;
 
-    /**
-     * Returns the current state.
-     *
-     * \warning
-     * The current state is computed from user issued actions and do not reflect
-     * the real state of the backend.
-     *
-     * It's a function with a trivial implementation based on int returning that
-     * is useful for testing.
-     */
-    response_state state() const;
+    void write_start_line(string_type start_line);
+    void write(boost::asio::buffer &buffer);
 
-    /**
-     * Clear all state (headers, trailers) from the object and give it another
-     * backend.
-     */
-    void reset(boost::http::server::backend &backend,
-               bool native_stream);
+    // body might very well not be fit into memory and user might very well want
+    // to save it to disk or immediately stream to somewhere else (proxy?)
+    boost::asio::buffer receive_body_part();
 
-    /**
-     * Export info about the backend/connection behaviour/nature.
-     *
-     * Native stream also implies trailers support.
-     */
-    bool native_stream() const;
-
-    // ### SYNC VERSIONS ###
-    // Functions in this section might throw boost::system::system_error
-
-    /**
-     * Write the 100-continue status that must be written before the client
-     * proceed to feed body of the request.
-     *
-     * \warning If `boost::http::server::request::continue_required` returns
-     * true, you **MUST** call this function (before open) to allow the remote
-     * client to send the body. If your handler can give an appropriate answer
-     * without the body, just reply as usual.
-     */
-    void write_continue();
-
-    void open(boost::http::status_code);
-    void open(int status_code, string reason_phrase);
-
-    void write_head(boost::http::status_code);
-    void write_head(int status_code, string reason_phrase);
-
-    void write(const boost::asio::buffer &buffer);
-
-    void write_trailer(const header_type &buffer);
-    void write_trailers(const headers_type &buffer);
+    // used to know if message is complete and what parts (body, trailers) were
+    // completed.
+    int incoming_state();
+    int outgoing_state();
 
     void end();
 
-    // ### END OF SYNC VERSIONS ###
+    // it doesn't make sense to expose an interface that only feed one trailer
+    // at a time, because headers and trailers are metadata about the body and
+    // the user need the metadata to correctly decode/interpret the body anyway.
+    headers_type receive_trailers();
 
-    // ### ASYNC VERSIONS with a callback ###
-
-    // Despites being async, the backend is responsible for guarantee the
-    // delivery order of the actions issued.
-
-    // If any issue occurs, the backend **MUST** ignore the remaining queued
-    // callbacks/actions and is free to delete them, but the response object
-    // itself (and the associated request object) must stay alive and unchanged
-    // until the user specifically calls `end`.
-
-    // I'm still thinking about behaviour on empty callback. Maybe it'd allow
-    // further optimization on the backend by not storing the backends at all.
-    // I'm still thinking and I won't describe this behaviour for now. (TODO)
-
-    void async_write_continue(std::function<void(boost::system::error_code)>
-                              callback);
-
-    void async_open(boost::http::status_code,
-                    std::function<void(boost::system::error_code)> callback);
-    void async_open(int status_code, string reason_phrase,
-                    std::function<void(boost::system::error_code)> callback);
-
-    void async_write_head(boost::http::status_code,
-                          std::function<void(boost::system::error_code)>
-                          callback);
-    void async_write_head(int status_code, string reason_phrase,
-                          std::function<void(boost::system::error_code)>
-                          callback);
-
-    void async_write(const boost::asio::buffer &buffer,
-                     std::function<void(boost::system::error_code)> callback);
-
-    void async_write_trailer(const header_type &buffer,
-                             std::function<void(boost::system::error_code)>
-                             callback);
-    void async_write_trailers(const headers_type &buffer,
-                              std::function<void(boost::system::error_code)>
-                              callback);
-
-    void async_end(std::function<void(boost::system::error_code)> callback);
-
-    // ### END OF ASYNC VERSIONS ###
-
-    /**
-     * Once the first chunk of body is sent, this attribute will enter in an
-     * unspecified state and might or might not be used again by the backend.
-     *
-     * It's recommended to the user to _clear_ this attribute once the object is
-     * done.
-     */
-    boost::http::headers headers;
+    // this function already requires "polymorphic handling to take HTTP/1.0
+    // buffering into account
+    void send_body(boost::asio::buffer &buffer);
 };
-}
+
+template<class Protocol>
+vector<char> receive_body(basic_message<Protocol> &message, headers_type &trailers);
+
+template<class Protocol>
+class basic_socket
+{
+public:
+    typedef basic_message<Protocol> message_type;
+
+    void send_message(message_type &message);
+};
+
+template<class Protocol>
+class basic_socket_acceptor
+{
+    void accept(basic_socket<Protocol> &socket);
+};
 }
 }
 ```
 
-> TODO
+This design was inspired by [these](
+https://sourceforge.net/p/axiomq/code/ci/master/tree/include/axiomq/basic_message_socket.hpp)
+[classes](
+https://sourceforge.net/p/axiomq/code/ci/master/tree/include/axiomq/basic_message_acceptor.hpp)
+from the axiomq project and by an interesting discussion with Bjorn Reese.
+
+In case you haven't noticed, this abstraction can also be used to create a HTTP
+client. Of course this HTTP client is little primitive, because the focus of
+this proposal is to create a embeddable HTTP server.
+
+These abstractions would be used for the built in HTTP server and I'm also
+thinking about the possibility of explore the template-based nature of this
+abstraction to also reuse (as opposed to use it just for the sake of using) it
+somewhere else. Maybe it'll resemble the polymorphic allocators, but maybe
+you're having difficult to imagine what I want with this lack of information,
+but the interface will improve with the time. The thing to pay attention for now
+is that this design is nice, but it's incompleting regarding the proposal scope
+(for instance, how do we integrate FastCGI in this design).
 
 ### The `boost::http::headers` container
 
@@ -1015,97 +695,6 @@ would be required:
 bool operator==(status lhs, int rhs);
 bool operator==(int lhs, status rhs);
 ```
-
-### The `boost::http::server::server_backend` implementation
-
-This is just a class implementing the `boost::http::server::backend` interface.
-I don't repeat inherited/implemented methods from its parent class here. But
-there aren't new functions also (follow the text to understand why), then no
-functions are listed at all.
-
-I thought about adding a `virtual boost::asio::ip::tcp::socket socket()` to
-allow the SSL backend share most of the code with the TCP backend, but SSL
-exposes different different functions to register the callback and it is more
-than just the matter of configuring the socket at startup (without mentioning
-the session setup mess that I'd need to create).
-
-I also thought about some kind of `push_socket`/`handle_socket` interface, but
-it doesn't work well, because (1) it becomes more difficult to manage object
-lifetime (unless you introduce yet another level of `std::shared_ptr`) and (2)
-`ssl::stream` "likes" to own the underlying socket.
-
-Then I thought about passing the `boost::asio::ip::tcp::acceptor` as argument to
-the constructor and expose helper protected functions to manage the manage the
-session objects, but the session object itself would need to be different (store
-`ssl::stream` or `ip::tcp::socket`) and I give up on the hierarchical design. In
-fact, I think I can make the hierarchical design happen, but it'd become too
-complex with no justified benefits.
-
-And all this effort spent just to give up on the inheritance. But this isn't a
-problem, because http handlers don't communicate directly with the backend and
-thus references to some _base class_ will be avoided. SSL/HTTPS will have its
-own class.
-
-Arguing even further, the interface of this class isn't that interesting,
-because as long as it implement all the backend requirements, the user won't
-care and it's unlikely to notice it. So, I'll define its interface later.
-
-```
-namespace boost {
-namespace http {
-namespace server {
-class server_backend: public boost::http::server::backend
-{
-    // implemented pure virtual methods
-
-    // communication with server_acceptor
-};
-}
-}
-}
-```
-
-### The `boost::http::server::server_acceptor class
-
-I wanted to give maximum flexibility for the user and I added several overloaded
-constructors and used an acceptor internally. Some of the constructors would be
-just a convenience to save the user from typing. The internal acceptor object
-was required to allow these convenience overloads.
-
-To improve the flexibility (delayed open, for instance), I added an accessor
-method for the acceptor object. It's possible to also have control over the
-acceptor construction by constructing it yourself and then _moving_ it to the
-server. ASIO documentation advises to not schedule any operation on the
-_moved-from_ object. Then you'll likely want to use the accessor method to the
-internal acceptor.
-
-```cpp
-namespace boost {
-namespace http {
-namespace server {
-class server_acceptor {
-public:
-    typedef std::function<void(request&, response&)> handler_type;
-
-    server_acceptor(boost::asio::ip::tcp::acceptor &&acceptor);
-    server_acceptor(boost::asio::io_service &io_service,
-                    boost::asio::ip::tcp::endpoint
-                    = boost::asio::ip::tcp::endpoint{boost::asio::ip::tcp::v4{},
-                                                     80});
-
-    const boost::asio::ip::tcp::acceptor &acceptor() const;
-    boost::asio::ip::tcp::acceptor &acceptor();
-
-    void handle(handler_type handler);
-
-    void async_handle(handler_type handler);
-};
-}
-}
-}
-```
-
-> TODO
 
 ### Where the proposal needs to be improved?
 
