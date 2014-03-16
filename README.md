@@ -592,7 +592,10 @@ public:
     headers_type headers;
 
     void write_start_line(string_type start_line);
-    void write(boost::asio::buffer &buffer);
+
+    // this function already requires "polymorphic handling to take HTTP/1.0
+    // buffering into account
+    void write(boost::asio::buffer &buffer); // writes a body part/chunk
 
     // body might very well not be fit into memory and user might very well want
     // to save it to disk or immediately stream to somewhere else (proxy?)
@@ -609,10 +612,6 @@ public:
     // at a time, because headers and trailers are metadata about the body and
     // the user need the metadata to correctly decode/interpret the body anyway.
     headers_type receive_trailers();
-
-    // this function already requires "polymorphic handling to take HTTP/1.0
-    // buffering into account
-    void send_body(boost::asio::buffer &buffer);
 };
 
 template<class Protocol>
