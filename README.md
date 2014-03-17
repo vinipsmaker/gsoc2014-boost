@@ -2,7 +2,8 @@
 
 ## Goals
 
-* Develop a library for Boost submission and inclusion that abstracts HTTP.
+* Develop a library for Boost submission and inclusion that abstracts HTTP
+  (**server** **side**).
 * Asynchronous design that provides scalability.
 * Modular design that doesn't force all abstractions to be used together.
   * The main goal of the modular design is to fit well in embeded projects
@@ -15,7 +16,8 @@
   * 100-continue status. A feature to reduce network consumption.
   * Upgrade support. A feature required for WebSocket.
 * Allow multiple backends such as FastCGI and CoAP. It will be useful also for
-  HTTP 2.0.
+  HTTP 2.0. The only backend implementation developed will be the built in
+  server (see the _deliverables_ section for more details).
 
 ## Non-goals
 
@@ -102,7 +104,7 @@ communications such as a builtin HTTP server, a FastCGI receiver and others.
 The cited overhead is only one level of indirection and should be very small. To
 provide the same functionality, one pure C API would need to add this small
 overhead too. Also, this design brings large benefits that easily overcome the
-ultra low overhead added concern, such as:
+added overhead concern, such as:
 
 * Obviously, HTTP messages are not tied to HTTP connections anymore.
   * Now it's easier to apply a finer-grained threaded request dispatch where you
@@ -125,11 +127,11 @@ this proposal, but there is also one interesting proposal that may
 affect/inspire the design documented here. This interesting proposal is the
 N3625, which documents an URI library for C++.
 
-There is a [standalone version of the URI library a github](
+There is a [standalone version of the URI library at github](
 https://github.com/cpp-netlib/uri). Details about how this document/library
 impacts this proposal will be found below, where appropriate. Currently there is
 no need to make use of this proposal or to mirror it in boost, but this feeling
-might change while I finish this design document.
+might change later.
 
 <!-- if proposal becomes too greedy and requires a ready uri implementation:
 
@@ -157,6 +159,12 @@ Boost ASIO provide first-class support for `std::future` through
 There are other approaches to make the code more readable under the callback
 model (see n3964 paper for more details).
 
+### Other frameworks
+
+I've spent some time researching other frameworks and you can find [my analysis
+on them](other_frameworks.md) as something that will influence the design
+decisions.
+
 ## Leveraging Boost
 
 The library would be built on top of Boost ASIO to provide an async API. Boost
@@ -173,10 +181,10 @@ see the review focused on the interface, the main contribution of this proposal.
 
 ## Leveraging other projects
 
-The initial implementation will use Ryan Dahl's HTTP parser, which is a parser
-used by large projects such as node.js itself, doesn't buffer the data, can be
-interrupted at anytime and has a permissive license. Some reasons to replace the
-parser later are:
+The initial implementation will use [Ryan Dahl's HTTP parser](
+https://github.com/joyent/http-parser), which is a parser used by large projects
+such as node.js itself, doesn't buffer the data, can be interrupted at anytime
+and has a permissive license. Some reasons to replace the parser later are:
 
 * Ryan Dahl's parser was designed with a C interface in mind (something like C's
   `qsort` vs C++'s `sort`). This isn't really a big problem here.
@@ -221,7 +229,7 @@ handling models possible with the proposed library. This is done to avoid the
 [blind men and an elephant](
 https://en.wikipedia.org/wiki/Blind_men_and_an_elephant) syndrome.
 
-#### The built in HTTP server way
+#### The built in HTTP server way (low-overhead version w/o strong producer-consumer separation)
 
 1. Programmer's code instantiated a `boost::http::basic_message<unspecified>`
    object and instructed `boost::http::basic_socket_acceptor` to fill its object
@@ -284,39 +292,148 @@ being send via different protocols. One for TCP wll be provided (see the
 _deliverables_ section for details). For instance, this variantion point enables
 us to send HTTP over UDP as used by UPnP/DLNA.
 
+Some specializations might add the "reset" member-function to help recycling the
+object.
+
+![](response_state.png)
+
 ```cpp
 namespace boost {
 namespace http {
+/**
+ * Represents the current state in the HTTP response.
+ *
+ * It has extra values that won't be used in "outgoing-request" mode.
+ * Explanation focuses in "outgoing-response" mode.
+ *
+ * The picture response_state.png can help you understand this file.
+ */
+enum class outgoing_state
+{
+    /**
+     * This is the initial state.
+     *
+     * It means that the response object wasn't used yet.
+     *
+     * At this state, you can only issue the status line or issue a continue
+     * action, if continue is supported/used in this HTTP session. Even if
+     * continue was requested, issue a continue action is optional and only
+     * required if you need the request's body.
+     */
+    EMPTY,
+    /**
+     * This state is reached from the `EMPTY` state, once you issue a continue
+     * action.
+     *
+     * No more continue actions can be issued from this state.
+     */
+    CONTINUE_ISSUED,
+    /**
+     * This state can be reached either from EMPTY or `CONTINUE_ISSUED`.
+     *
+     * It happens when the status line is reached (through `open` or `write_head`).
+     */
+    STATUS_LINE_ISSUED,
+    /**
+     * This state is reached once the first chunk of body is issued.
+     *
+     * \warning
+     * Once this state is reached, it is no longer safe to access the
+     * `boost::http::server::response::headers` attribute, which is left in an
+     * unspecified state and might or might nor be used again by the backend.
+     * You're safe to access and modify this attribute again once the `FINISHED`
+     * state is reached, but the attribute will be at an unspecified state and
+     * is recommended to _clear_ it.
+     */
+    HEADERS_ISSUED,
+    /**
+     * This state is reached once the first trailer is issued to the backend.
+     *
+     * After this state is reached, it's not allowed to write the body again.
+     * You can either proceed to issue more trailers or `end` the response.
+     */
+    BODY_ISSUED,
+    /**
+     * The response is considered complete once this state is reached. You
+     * should no longer access this response or the associated request objects,
+     * because the backend has the freedom to recycle or destroy the objects.
+     */
+    FINISHED
+};
+
 /** Represents a single HTTP message (a request or a response).
  */
 template<class Protocol>
 class basic_message
 {
 public:
+    // ### Common abstraction for incoming and outgoing traffic (request or response) ###
     string_type start_line;
+
+    // if you're using the object to issue a HTTP request, outgoing headers will
+    // be here, but once the "ready" callback is called, received headers will
+    // also be here. but http clients are not the focus of this proposal.
     headers_type headers;
 
+    // this function should check the string format and possibly throw an
+    // exception in debug mode
     void write_start_line(string_type start_line);
 
-    // this function already requires "polymorphic handling to take HTTP/1.0
+    // this function already requires "polymorphic" handling to take HTTP/1.0
     // buffering into account
     void write(boost::asio::buffer &buffer); // writes a body part/chunk
 
-    // body might very well not be fit into memory and user might very well want
-    // to save it to disk or immediately stream to somewhere else (proxy?)
+    // body might very well not fit into memory and user might very well want to
+    // save it to disk or immediately stream to somewhere else (proxy?)
     boost::asio::buffer receive_body_part();
-
-    // used to know if message is complete and what parts (body, trailers) were
-    // completed.
-    int incoming_state();
-    int outgoing_state();
-
-    void end();
 
     // it doesn't make sense to expose an interface that only feed one trailer
     // at a time, because headers and trailers are metadata about the body and
     // the user need the metadata to correctly decode/interpret the body anyway.
     headers_type receive_trailers();
+
+    void write_trailers(headers_type headers);
+
+    void end();
+
+    // ### Direction-dependant (incoming or outgoing) API  ###
+
+    /* Vocabulary might be confusing here. The word "incoming" could refer to
+       request if in server-mode or to response if in client-mode. */
+
+    // used to know if message is complete and what parts (body, trailers) were
+    // completed.
+    boost::http::outgoing_state outgoing_state() const;
+
+    /* property queries. it doesn't work on client mode, because info about
+       server is unknown until the response come in the future. */
+
+    // "incoming_request" prefix is used instead outgoing_response, because
+    // information is gathered within this mode, not after the response start to
+    // flow.
+    bool incoming_request_native_stream() const;
+
+    /**
+     * Check if received headers include `100-continue` in the _Expect_ header.
+     * It's just a convenient method that doesn't imply backend access overhead.
+     *
+     * The name _required_ is used instead _supported_, because a 100-continue
+     * status require action from the server.
+     */
+    bool incoming_request_continue_required() const;
+
+    bool incoming_request_upgrade_required() const;
+
+    /**
+     * Write the 100-continue status that must be written before the client
+     * proceed to feed body of the request.
+     *
+     * \warning If `incoming_request_continue_required` returns true, you
+     * **MUST** call this function (before open) to allow the remote client to
+     * send the body. If your handler can give an appropriate answer without the
+     * body, just reply as usual.
+     */
+    bool outgoing_response_write_continue();
 };
 
 template<class Protocol>
@@ -334,6 +451,9 @@ public:
 template<class Protocol>
 class basic_socket_acceptor
 {
+    // the one below is only available under the TCP protocol
+    basic_socket_acceptor(boost::asio::ip::tcp::acceptor &&acceptor);
+
     void accept(basic_socket<Protocol> &socket);
 };
 }
@@ -486,3 +606,44 @@ GSoC, I've had discussions with the users and developers opposed to the "do
 first, ask later" approach, I've gathered and implemented features that users
 wanted and even collected opinions/votes on diverging features. I'm used to
 adopt this approach every time I have contact with the user.
+
+## Timeline
+
+I hope that a lot of discussion will happen and require refactoring, then I'm
+limiting the scope a little bit. All items from the "deliverables" section will
+be done, of course. Another reason to limit the scope a little was to focus on
+Boost quality work. Possibly more will be delivered.
+
+### Before mid-term evaluation (2014-06-27)
+
+* Prepare a Boost-compatible build system for the library.
+* Prepare a Boost-compatible documentation system for the library.
+* Prepare unit tests and CI environment.
+* The "naked" HTTP built in server where separation of producers and consumers
+  isn't complete. This server doesn't abstract backends (built in server,
+  FastCGI, ...) completely. It'll be used to implement the built in server
+  producer provided in the architecture that is more abstract (runtime vs
+  template).
+  * HTTP power (chunking, pipelining, continue, upgrade).
+* Beginning of the file server implementation.
+* Beginning of the runtime-based polymorphic consumers/producers.
+* Several tests and documentation.
+
+### Before suggested "pencils down" date (2014-08-11)
+
+* Finish the runtime-based polymorphic consumers/producers. HTTP differences
+  such as "native-stream" should be exposed by now.
+* Finish the reusable file server implementation. Interface could depend on the
+  item immediately above.
+* Polish library.
+  * Documentation.
+  * Tests.
+  * ...
+
+### After suggested "pencils down" date
+
+Small tasks that I miss/forget previously for any reason.
+
+### After GSoC
+
+Continue to be one of the core HTTP server library maintainers.
