@@ -236,14 +236,6 @@ routers in the core library submitted to boost (yet!), but to use a raw handling
 mechanism which both styles (and more to come) can use. A modular design,
 remember?
 
-<!-- TODO: The below paragraph -- understand why/how schedulers are used within
-    pion -->
-
-Another thing worth mentioning is the scheduler. Again, the project isn't very
-documented, turning the idea of custom schedulers almost useless. But the
-concept of a scheduler is well known and I'll take a closer look on how this
-concept is used within pion later.
-
 ## POCO
 
 I took a look at some gritty details on POCO http server and the design looks

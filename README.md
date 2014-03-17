@@ -206,10 +206,8 @@ Small applications should be created to help benchmark and spot bottleneck
 points. Given that, at least a file server will be created for the proposal. You
 can find details about the proposal below.
 
-The proposal might be a little incomplete, but I hope it won't be a problem to
-understand the main ideas and I'll be available for any questions you might
-have. And besides being incomplete, it's a solid start for the project
-(including implementation work).
+Special attention was taken to communicate the main ideas and determine a solid
+start for the project.
 
 ### namespace
 
@@ -271,14 +269,20 @@ Because HTTP imposes a clear separation of client and server, a "peer"
 architecture where everyone "is" client and server like WebSocket or JSON-RPC
 cannot be adopted. Thus, `basic_socket_acceptor` will "emit" `basic_message`
 objects that cannot be used to send new requests over the channel.
-`basic_socket_acceptor` should handle pipelining of incoming data and
-`basic_socket` should handle ordering/pipelining of outgoing data.
 
-The design might be refined later. You should also notice that `Protocol`
-concept isn't defined, because the precise communication (in the sense of
-objects communication and not network communication) isn't completely defined,
-but this is this less relevant for a proposal submission and it'll be done
-during the implementation.
+HTTP pipelining will allow several requests to be received while the reply for
+the first request was not generated yet and multiple `basic_message` messages
+will be live on the application. Thus, synchornization to guarantee ordering of
+the replies must be done by an entity that owns the communication channel. To
+(1) ease the user's life not creating some complex design and (2) because this
+object initially knows and owns the channel, `basic_socket_acceptor` should
+handle pipelining of incoming data. `basic_socket` should handle
+ordering/pipelining of outgoing data.
+
+The design may be refined later. `Protocol` is a variation point to allow HTTP
+being send via different protocols. One for TCP wll be provided (see the
+_deliverables_ section for details). For instance, this variantion point enables
+us to send HTTP over UDP as used by UPnP/DLNA.
 
 ```cpp
 namespace boost {
@@ -345,15 +349,6 @@ from the axiomq project and by an interesting discussion with Bjorn Reese.
 In case you haven't noticed, this abstraction can also be used to create a HTTP
 client. Of course this HTTP client is little primitive, because the focus of
 this proposal is to create a embeddable HTTP server.
-
-These abstractions would be used for the built in HTTP server and I'm also
-thinking about the possibility of explore the template-based nature of this
-abstraction to also reuse (as opposed to use it just for the sake of using) it
-somewhere else. Maybe it'll resemble the polymorphic allocators, but maybe
-you're having difficult to imagine what I want with this lack of information,
-but the interface will improve with the time. The thing to pay attention for now
-is that this design is nice, but it's incompleting regarding the proposal scope
-(for instance, how do we integrate FastCGI in this design).
 
 ### The `boost::http::headers` container
 
@@ -457,6 +452,7 @@ required once I write the timeline for the project):
   write handlers that don't need the async feature/don't block. Although the
   "increased" difficult for async handlers is quite low... but it's still
   boilerplate.
+* HTTPS (SSL) support.
 * Forms and file uploader parsers.
 * CoAP support.
 * Test/research the best hash algorithm for HTTP headers based on the most
