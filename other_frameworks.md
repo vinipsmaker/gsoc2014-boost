@@ -240,8 +240,12 @@ remember?
 
 I took a look at some gritty details on POCO http server and the design looks
 mostly okay, but it doesn't have a strong focus on asynchronous operations like
-ASIO. The interface itself doesn't resemble ASIO at all (eg. by making use of
-things like std::istream for Poco::Net::HTTPRequest::read).
+ASIO. I want to clarify that I'm **not** comparing POCO features to ASIO
+features. I'm comparing design principles upon the two were built.
+
+In fact, the POCO interface doesn't resemble ASIO at all (eg. by making use of
+things like std::istream for Poco::Net::HTTPRequest::read). It's not weak focus
+on async operations. It's almost no consideration to async at all.
 
 Another concern would be support for other backends, but looking at the
 documentation, it's possible to see a highly separate hierarchy of abstractions
