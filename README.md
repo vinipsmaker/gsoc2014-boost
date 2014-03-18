@@ -625,6 +625,12 @@ limiting the scope a little bit. All items from the "deliverables" section will
 be done, of course. Another reason to limit the scope a little was to focus on
 Boost quality work. Possibly more will be delivered.
 
+I could write a more detailed timeline, but then more errors about its accuracy
+would likely to arise. And several projects require an extremely detailed
+timeline to test the domain's knowledge of the candidate, but I have been
+working on several projects related to this area and such overly detailed
+timeline won't be necessary.
+
 ### Before mid-term evaluation (2014-06-27)
 
 * Prepare a Boost-compatible build system for the library.
