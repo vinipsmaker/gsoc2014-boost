@@ -238,9 +238,9 @@ https://en.wikipedia.org/wiki/Blind_men_and_an_elephant) syndrome.
 3. The `boost::http::basic_socket_acceptor` reacts and call your callback upon
    some unspecified asio's event.
 4. You use `boost::http::basic_socket` API to respond to the request.
-5. The `boost::http::basic_socket` object will rely on the
-   `boost::http::basic_socket_acceptor` object to rely on ordering guarantees
-   (HTTP pipelining) and the reply will be eventually sent.
+5. The `boost::http::basic_socket` object free the channel to allow the
+   `boost::http::basic_socket_acceptor` object emit new messages or messages
+   that were queued.
 
 Notes:
 
@@ -250,6 +250,16 @@ Notes:
   object and the several parsers that receive it as input (including session
   support) and reply with the `write_start_line()`, `write(boost::asio::buffer)`
   and `end()` methods of the `message` object.
+
+#### Chunking (partial download)
+
+Another high-level overview, but focusing on how the API plays with chunking.
+
+1. The callback for the filled (regarding headers) basic_message<unspecified>
+   object is called.
+2. The callback issue a new callback through
+   `basic_message<unspecified>::async_receive_body_part`.
+3. The data is received within this new callback.
 
 ### The `boost::http::basic_socket` abstraction
 
@@ -279,13 +289,14 @@ cannot be adopted. Thus, `basic_socket_acceptor` will "emit" `basic_message`
 objects that cannot be used to send new requests over the channel.
 
 HTTP pipelining will allow several requests to be received while the reply for
-the first request was not generated yet and multiple `basic_message` messages
-will be live on the application. Thus, synchornization to guarantee ordering of
-the replies must be done by an entity that owns the communication channel. To
-(1) ease the user's life not creating some complex design and (2) because this
-object initially knows and owns the channel, `basic_socket_acceptor` should
-handle pipelining of incoming data. `basic_socket` should handle
-ordering/pipelining of outgoing data.
+the first request was not generated yet. Multiple `basic_message` messages per
+channel will **NOT** live on the application (they are queued and approach may
+be differnt if the underlying channel supports multiplexing). Thus,
+synchornization to guarantee ordering of the replies isn't required, because
+only one handler (the next one) is working on the channel. "Parallel" handlers
+for the same channel aren't issued, because it the output couldn't be sent
+immediately anyway and the output would need to be gathered/stored in RAM,
+easing a DoS attack for no real benefit.
 
 The design may be refined later. `Protocol` is a variation point to allow HTTP
 being send via different protocols. One for TCP wll be provided (see the
