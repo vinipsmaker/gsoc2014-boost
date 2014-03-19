@@ -238,24 +238,19 @@ remember?
 
 ## POCO
 
-I took a look at some gritty details on POCO http server and the design looks
-mostly okay, but it doesn't have a strong focus on asynchronous operations like
-ASIO. I want to clarify that I'm **not** comparing POCO features to ASIO
-features. I'm comparing design principles upon the two were built.
+POCO's focus seems to be any networking application and is pretty large. There's
+even database, xml and zip abstractions. POCO provides multiple models to
+support [asynchronous operations](
+https://github.com/vinipsmaker/gsoc2014-boost/commit/cd1db10a36481bfa2416b34da2e188031791e1b8#commitcomment-5733963).
 
-In fact, the POCO interface doesn't resemble ASIO at all (eg. by making use of
-things like std::istream for Poco::Net::HTTPRequest::read). It's not weak focus
-on async operations. It's almost no consideration to async at all.
-
-Another concern would be support for other backends, but looking at the
+One concern would be support for other backends, but looking at the
 documentation, it's possible to see a highly separate hierarchy of abstractions
 that plays well with multi-threaded design, [modern HTTP features](
 https://github.com/pocoproject/poco/blob/492317224154a21407ba346f6e81471561e45250/Net/src/WebSocket.cpp#L142-162)
 and would allow multiple backends (but I didn't find any other ready backends,
 then **maybe** it means a not easy-to-implement interface was defined).
 
-The only real problem was the lack of a highly asynchronous interface, but their
-work would still be useful to help define abstractions (and their hierarchy). Of
+Their work can be useful to help define abstractions (and their hierarchy). Of
 course an ASIO-ification should happen in the process.
 
 [This is a nice page to see POCO's look-and-feel](
@@ -265,9 +260,6 @@ flexibility is required](http://isocpp.org/blog/2014/03/callback) such as
 `TimeRequestHandler::handleRequest`), the code became more verbose than
 necessary. Compare the code with this [other one](
 https://github.com/d5/node.native#sample-code), also written in C++.
-
-Said all that, Poco's focus seems to be any networking application and is pretty
-large. There's even database, xml and zip abstractions.
 
 ## Others
 
