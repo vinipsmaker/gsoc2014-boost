@@ -251,15 +251,44 @@ Notes:
   support) and reply with the `write_start_line()`, `write(boost::asio::buffer)`
   and `end()` methods of the `message` object.
 
-#### Chunking (partial download)
+#### Partial receiving
 
-Another high-level overview, but focusing on how the API plays with chunking.
+Another high-level overview, but focusing on how the API plays with asynchronous
+receiving of the body parts.
 
 1. The callback for the filled (regarding headers) basic_message<unspecified>
    object is called.
 2. The callback issue a new callback through
    `basic_message<unspecified>::async_receive_body_part`.
 3. The data is received within this new callback.
+
+#### Partial download
+
+Partial download is a set of defined headers to indicate which range of the body
+the client is interested in. It's more useful when conditional requests (another
+set of specified headers) are also used, to avoid corrupted downloads. This
+technique doesn't affect the communication layer and it is dependant on domain
+knowledge. Thus, partial download through HTTP is responsibility of the user
+(some types of content may not even support it).
+
+#### Chunking
+
+Chunking is done automatically (if the underlying protocol supports) on sent
+messages to send the bytes while they're generated. A property is exported to
+make the user aware if the underlying channel supports chunking or internal
+buffering will be used.
+
+#### Pipelining
+
+The entity that is responsible to receive requests will only expose one request
+at time per channel communication, unless multiplexing is supported. This
+approach is safer and more performant. This means that no user handler will be
+aware of the existance of the first request while the reply isn't fully
+scheduled for delivery (if the underlying channel doesn't support multiplexing).
+
+Doing otherwise would mean that an internal locking would be used and the
+generated output would only delivered once the blocking reply is finished,
+consuming RAM for no good reason (and possibly easing a DoS attack).
 
 ### The `boost::http::basic_socket` abstraction
 
