@@ -324,7 +324,7 @@ consuming extra RAM for no good reason (and possibly easing a DoS attack).
 
 ### The `boost::http::headers` container
 
-This is one of the only two names currently defined outside of the namespace
+This is one of the names currently defined outside of the namespace
 `boost::http::server` and it would also be used in a future HTTP client library.
 
 Initially it would be a typedef for an `unordered_multimap<string, string>`, but
@@ -698,14 +698,7 @@ behaviour).
 
 ## Extra features
 
-The implementation of a HTTP server isn't very challenging. The biggest problem
-is to get the design right, but I already gave my design ideas in this document,
-then we can consider the design (the most challenging part) done. Of course I'm
-open to suggestions and I won't mind to refactor the interface in the middle of
-the implementation work, but to compensate the big difference of effort between
-interface and implementation, some of the following features would be
-implemented too (I'll decide which ones are optionals and which ones are
-required once I write the timeline for the project):
+If time allows:
 
 * Session support (inspired on Tufão's session support, which abstracts
   client-side and server-side based session stores under the same interface, but
@@ -745,7 +738,7 @@ provide server-sent responses to non-yet-received-requests would be propagated
 sooner.
 
 Good candidates to be implemented after HTTP/2.0 are the threads helpers and the
-router with some sample handlers to prove the flexibility and power of the API.
+router with some simple handlers to prove the flexibility and power of the API.
 This proof can help to convince boost members to agree that this is a good
 design and should be integrated within the rest of the project.
 
@@ -764,7 +757,7 @@ be done, of course. Another reason to limit the scope a little was to focus on
 Boost quality work. Possibly more will be delivered.
 
 I could write a more detailed timeline, but then more errors about its accuracy
-would likely to arise. And several projects require an extremely detailed
+would likely to arise. And several organizations require an extremely detailed
 timeline to test the domain's knowledge of the candidate, but I have been
 working on several projects related to this area and such overly detailed
 timeline won't be necessary.
