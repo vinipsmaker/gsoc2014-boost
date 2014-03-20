@@ -117,6 +117,31 @@ added overhead concern, such as:
   library).
 * There are other nice implications, but I want to detail this later.
 
+### Active model vs passive model
+
+There are two models that were taken into consideration.
+
+The active model follows asio approach where the user explicitly request another
+action (in `boost::asio::ip::tcp::acceptor::accept`, for instance). This model
+puts the user in control, making it more flexible and allowing, for instance,
+decide whether or not to defer the acceptance until later during high load
+scenarios.
+
+The passive/reactive model puts the library (referred as _frameworks_ sometimes)
+and the user register callbacks to be called in specific events.
+
+This library will follow the active model, which is a better foundation to build
+higher-level abstractions. Possibly some alternative passive-based abstractions
+be introduced to "help" the user.
+
+### Error handling
+
+Error handling will be provided through `boost::system::error_code`.
+
+A standard `boost::system::error_category` will be used to communicate
+out-of-order errors (e.g. body issued before start-line). Other standard and
+reusable error types may be defined.
+
 ### SG4
 
 SG4 is the name of the [responsible working group for networking within the
@@ -232,13 +257,16 @@ https://en.wikipedia.org/wiki/Blind_men_and_an_elephant) syndrome.
 #### The built in HTTP server way (low-overhead version w/o strong producer-consumer separation)
 
 1. Programmer's code instantiated a `boost::http::basic_message<unspecified>`
-   object and instructed `boost::http::basic_socket_acceptor` to fill its object
-   and call a callback when a new message is ready.
-2. You open Firefox and make a request.
-3. The `boost::http::basic_socket_acceptor` reacts and call your callback upon
+   object, a `boost::http::basic_socket<unspecified>` object and instructed
+   `boost::http::basic_socket_acceptor` to fill its objects and call a callback
+   when a new stream is ready.
+2. You instruct `basic_socket` to fill `basic_message` through the
+   `basic_socket::async_receive_message` function.
+3. You open Firefox and make a request.
+4. The `boost::http::basic_socket_acceptor` reacts and call your callback upon
    some unspecified asio's event.
-4. You use `boost::http::basic_socket` API to respond to the request.
-5. The `boost::http::basic_socket` object free the channel to allow the
+5. You use `boost::http::basic_socket` API to respond to the request.
+6. The `boost::http::basic_socket` object free the channel to allow the
    `boost::http::basic_socket_acceptor` object emit new messages or messages
    that were queued.
 
@@ -259,8 +287,11 @@ receiving of the body parts.
 1. The callback for the filled (regarding headers) basic_message<unspecified>
    object is called.
 2. The callback issue a new callback through
-   `basic_message<unspecified>::async_receive_body_part`.
-3. The data is received within this new callback.
+   `basic_socket<unspecified>::async_receive_body_part`.
+3. The data is received within this new callback into the
+   `basic_message<unspecified>` object. He can save the current accumulated body
+   to disk, stream it or just let it to consume more RAM.
+4. User issue more body parts until the body is complete.
 
 #### Partial download
 
@@ -274,31 +305,134 @@ knowledge. Thus, partial download through HTTP is responsibility of the user
 #### Chunking
 
 Chunking is done automatically (if the underlying protocol supports) on sent
-messages to send the bytes while they're generated. A property is exported to
+messages to send the bytes while they're generated. A property (
+`boost::http::basic_socket::outgoing_response_native_stream`) is exported to
 make the user aware if the underlying channel supports chunking or internal
 buffering will be used.
 
 #### Pipelining
 
 The entity that is responsible to receive requests will only expose one request
-at time per channel communication, unless multiplexing is supported. This
+at a time per channel communication, unless multiplexing is supported. This
 approach is safer and more performant. This means that no user handler will be
 aware of the existance of the first request while the reply isn't fully
 scheduled for delivery (if the underlying channel doesn't support multiplexing).
 
 Doing otherwise would mean that an internal locking would be used and the
 generated output would only delivered once the blocking reply is finished,
-consuming RAM for no good reason (and possibly easing a DoS attack).
+consuming extra RAM for no good reason (and possibly easing a DoS attack).
+
+### The `boost::http::headers` container
+
+This is one of the only two names currently defined outside of the namespace
+`boost::http::server` and it would also be used in a future HTTP client library.
+
+Initially it would be a typedef for an `unordered_multimap<string, string>`, but
+I intend to discuss this concern further and possibly run a series of
+benchmarks. A custom `KeyEqual` functor will take care of case insensitive keys
+while discussions about the right container are ongoing.
+
+**NOTE:** The SG4's uri library also face the problem to define a
+case-insensitive interface and the chosen solution was to convert them to lower
+case upon normalization.
+
+### The `boost::http::status_code` enum
+
+Just an enum class containing the useful status codes defined in RFC2616. A
+client library will receive a status code through the response from the remote
+server, then this declaration is done outside of the server namespace, because
+it's useful for servers and clients.
+
+The client library (outside of the scope of this proposal) can receive integers
+not enumarated in this abstraction, then an integer would be chosen instead of
+this enum in such client library, but this abstraction is still useful for
+comparassions maintaining readable code. Consider the following example:
+
+```cpp
+if ( response.status_code() /* returns an integer */ == status_code::OK ) {
+    // ...
+}
+```
+
+Of course I'm aiming C++11 at minimum and enum classes are useful to avoid
+namespace polution. Then, to the code above work, the following two declarations
+would be required:
+
+```cpp
+bool operator==(status lhs, int rhs);
+bool operator==(int lhs, status rhs);
+```
+
+### The `boost::http::basic_message` abstraction
+
+The purpose of the `boost::http::basic_message` is to serve as a container to
+hold generic HTTP messages.
+
+HTTP messages are made of the following parts:
+
+* **Start-line**: It's context dependant and have a different structure for
+  requests and responses. Initially, the object should store the start line
+  (excluding `"\r\n"`) without trying to decode its meaning, leaving this task
+  for a specialized abstraction of the appropriate HTTP message type (request or
+  response). The design will be refined later.
+* **Headers**: The metadata about the message. The user will need this info to
+  handle the message appropriately.
+* **Body**: Its size may not fit into memory. Also, the user might be able to
+  handle parts of its contents (in-place, processing while receiving). Given
+  these facts, events for each piece of body gathered should be generated, but
+  this container still could be used to buffer the data.
+
+Common operations between request and response that the underlying channel
+should provide:
+
+* Send and receive the start line.
+* Populate the headers.
+* Signalize about new body part.
+* Populate or signalize about trailers.
+* Signalize about end of message.
+
+These are properties available to both, requests and responses. Try to merge two
+objects into one can arise confusion and complexity. A second drawback would be
+sharing of constness that prevents greater granularity. One real-world example
+of the benifits of greater granularity is the implementation of HTTP state
+mechanism (aka cookies and sessions), where the target algorithm only needs
+write-access to the response object and its signature can clearly advise the
+algorithm's side effects.
+
+A merged object is considered sometimes, because the request and response
+objects have a close relationship semantics (share the same underlying channel,
+have dependant lifetime semantics, ...), but these problems were solved by two
+decisions already:
+
+* `basic_message` is just a container.
+* The choice to use an _active_ _model_.
+
+An example derived from these consideration follows. Design will be further
+refined later.
+
+```cpp
+namespace boost {
+namespace http {
+/** Represents a single HTTP message (a request or a response).
+ */
+template<class Protocol>
+class basic_message
+{
+public:
+    string_type start_line;
+    headers_type headers;
+    boost::asio::buffer body;
+};
+}
+}
+```
 
 ### The `boost::http::basic_socket` abstraction
 
 This abstraction is being proposed to improve the message passing fundamental
 design, abstracting differences between request and response messages away. The
 only fundamental difference between request and response messages is the _start
-line_. The `basic_socket` object should store the start line (excluding
-`"\r\n"`) without trying to decode its meaning, leaving this task for a
-specialized abstraction of the appropriate HTTP message type (request or
-response).
+line_.
 
 This abstraction should resemble `boost::asio::basic_socket`. Below you'll only
 find the declarations for the sync version of the API. This is only done for
@@ -309,23 +443,29 @@ later.
 Three levels (`basic_message`, `basic_socket` and `basic_socket_acceptor`) are
 used instead two to better support HTTP pipelining (and even multiplexing on
 HTTP/2.0). `basic_message` represents a single HTTP message, while
-`basic_socket` represents a socket stream that can be used to send multiple HTTP
-messages.
+`basic_socket` represents a socket stream that can be used to send or receive an
+HTTP message.
 
 Because HTTP imposes a clear separation of client and server, a "peer"
 architecture where everyone "is" client and server like WebSocket or JSON-RPC
-cannot be adopted. Thus, `basic_socket_acceptor` will "emit" `basic_message`
-objects that cannot be used to send new requests over the channel.
+cannot be adopted. Thus, the implementation should signal an error if user try
+to send a request-message using a `basic_socket` that was created to parse an
+incoming request or send a response-message using a `basic_socket` configured to
+act as a HTTP client. Note that the definition of a HTTP client is outside of
+the scope of this proposal.
 
 HTTP pipelining will allow several requests to be received while the reply for
-the first request was not generated yet. Multiple `basic_message` messages per
+the first request was not generated yet. Multiple `basic_socket` messages per
 channel will **NOT** live on the application (they are queued and approach may
 be differnt if the underlying channel supports multiplexing). Thus,
 synchornization to guarantee ordering of the replies isn't required, because
 only one handler (the next one) is working on the channel. "Parallel" handlers
-for the same channel aren't issued, because it the output couldn't be sent
+for the same channel aren't issued, because the output couldn't be sent
 immediately anyway and the output would need to be gathered/stored in RAM,
 easing a DoS attack for no real benefit.
+
+Investigation to decide whether or not the `basic_message` used to receive data
+should be embedded into `basic_socket`.
 
 The design may be refined later. `Protocol` is a variation point to allow HTTP
 being send via different protocols. One for TCP wll be provided (see the
@@ -401,42 +541,16 @@ enum class outgoing_state
     FINISHED
 };
 
-/** Represents a single HTTP message (a request or a response).
- */
 template<class Protocol>
-class basic_message
+vector<char> receive_body(basic_message<Protocol> &message, headers_type &trailers);
+
+template<class Protocol>
+class basic_socket
 {
 public:
-    // ### Common abstraction for incoming and outgoing traffic (request or response) ###
-    string_type start_line;
+    typedef basic_message<Protocol> message_type;
 
-    // if you're using the object to issue a HTTP request, outgoing headers will
-    // be here, but once the "ready" callback is called, received headers will
-    // also be here. but http clients are not the focus of this proposal.
-    headers_type headers;
-
-    // this function should check the string format and possibly throw an
-    // exception in debug mode
-    void write_start_line(string_type start_line);
-
-    // this function already requires "polymorphic" handling to take HTTP/1.0
-    // buffering into account
-    void write(boost::asio::buffer &buffer); // writes a body part/chunk
-
-    // body might very well not fit into memory and user might very well want to
-    // save it to disk or immediately stream to somewhere else (proxy?)
-    boost::asio::buffer receive_body_part();
-
-    // it doesn't make sense to expose an interface that only feed one trailer
-    // at a time, because headers and trailers are metadata about the body and
-    // the user need the metadata to correctly decode/interpret the body anyway.
-    headers_type receive_trailers();
-
-    void write_trailers(headers_type headers);
-
-    void end();
-
-    // ### Direction-dependant (incoming or outgoing) API  ###
+    // ### QUERY FUNCTIONS ###
 
     /* Vocabulary might be confusing here. The word "incoming" could refer to
        request if in server-mode or to response if in client-mode. */
@@ -445,13 +559,14 @@ public:
     // completed.
     boost::http::outgoing_state outgoing_state() const;
 
-    /* property queries. it doesn't work on client mode, because info about
-       server is unknown until the response come in the future. */
-
-    // "incoming_request" prefix is used instead outgoing_response, because
-    // information is gathered within this mode, not after the response start to
-    // flow.
-    bool incoming_request_native_stream() const;
+    /** if output support native stream or will buffer the body internally
+     *
+     * outgoing_response prefix is used instead plain outgoing, because it's not
+     * possible to query capabilities information w/o communication with the
+     * other peer, then this query is only available in server-mode. clients can
+     * just issue a request and try again later if not supported. design may be
+     * refined later. */
+    bool outgoing_response_native_stream() const;
 
     /**
      * Check if received headers include `100-continue` in the _Expect_ header.
@@ -464,6 +579,42 @@ public:
 
     bool incoming_request_upgrade_required() const;
 
+    // ### END OF QUERY FUNCTIONS ###
+
+    // ### READ FUNCTIONS ###
+
+    // only warns you when the message is ready (start-line and headers).
+    void receive_message(message_type &message);
+
+    // body might very well not fit into memory and user might very well want to
+    // save it to disk or immediately stream to somewhere else (proxy?)
+    void receive_body_part(message_type &type);
+
+    // it doesn't make sense to expose an interface that only feed one trailer
+    // at a time, because headers and trailers are metadata about the body and
+    // the user need the metadata to correctly decode/interpret the body anyway.
+    void receive_trailers(message_type &type);
+
+    // ### END OF READ FUNCTIONS ###
+
+    // ### WRITE FUNCTIONS ###
+
+    // write the whole message in "one phase"
+    void write_message(const message_type &message);
+
+    // write start-line and headers
+    void write_metadata(const message_type &message);
+
+    /** write a body part
+     *
+     * this function already requires "polymorphic" behaviour to take HTTP/1.0
+     * buffering into account */
+    void write(boost::asio::buffer &part);
+
+    void write_trailers(headers_type headers);
+
+    void end();
+
     /**
      * Write the 100-continue status that must be written before the client
      * proceed to feed body of the request.
@@ -474,18 +625,8 @@ public:
      * body, just reply as usual.
      */
     bool outgoing_response_write_continue();
-};
 
-template<class Protocol>
-vector<char> receive_body(basic_message<Protocol> &message, headers_type &trailers);
-
-template<class Protocol>
-class basic_socket
-{
-public:
-    typedef basic_message<Protocol> message_type;
-
-    void send_message(message_type &message);
+    // ### END OF WRITE FUNCTIONS ###
 };
 
 template<class Protocol>
@@ -508,63 +649,31 @@ from the axiomq project and by an interesting discussion with Bjorn Reese.
 
 In case you haven't noticed, this abstraction can also be used to create a HTTP
 client. Of course this HTTP client is little primitive, because the focus of
-this proposal is to create a embeddable HTTP server.
+this proposal is to create a embeddable HTTP server. The client HTTP itself is
+outside of the scope of this proposal.
 
-### The `boost::http::headers` container
+### Where the design needs to be improved?
 
-This is one of the only two names currently defined outside of the namespace
-`boost::http::server` and it would also be used in a future HTTP client library.
-
-Initially it would be a typedef for an `unordered_multimap<string, string>`, but
-I intend to discuss this concern further and possibly run a series of
-benchmarks. A custom `KeyEqual` functor will take care of case insensitive keys
-while discussions about the right container are ongoing.
-
-**NOTE:** The SG4's uri library also face the problem to define a
-case-insensitive interface and the chosen solution was to convert them to lower
-case upon normalization.
-
-### The `boost::http::status_code` enum
-
-Just an enum class containing the useful status codes defined in RFC2616. A
-client library will receive a status code through the response from the remote
-server, then this declaration is done outside of the server namespace, because
-it's useful for servers and clients.
-
-The client library (outside of the scope of this proposal) can receive integers
-not enumarated in this abstraction, then an integer would be chosen instead of
-this enum in such client library, but this abstraction is still useful for
-comparassions maintaining readable code. Consider the following example:
-
-```cpp
-if ( response.status_code() /* returns an integer */ == status_code::OK ) {
-    // ...
-}
-```
-
-Of course I'm aiming C++11 at minimum and enum classes are useful to avoid
-namespace polution. Then, to the code above work, the following two declarations
-would be required:
-
-```cpp
-bool operator==(status lhs, int rhs);
-bool operator==(int lhs, status rhs);
-```
-
-### Where the proposal needs to be improved?
-
-Surely, the first thing is completeness os several assorted missing parts.
+Surely, the first thing is completeness of several assorted missing parts.
 
 I also want to better study how a performant multi-threaded model can be
 integrated in this library.
 
-The last task for me is to reread the n3964 paper (Library Foundations for
+Another task for me is to reread the n3964 paper (Library Foundations for
 Asynchronous Operations) more carefully to propose an extensible model that can
 adapt itself to support futures, coroutines and Boost.Fiber, to name a few. I'm
 not sure if it's possible to support them all within the GSoC timeframe and I
 need to study a bit further to check that. If ASIO can help me enough, then I
 think it'll be possible to implement them all, but if not, I want at least to
 make sure that more models can be supported in the future without API breakage.
+
+The last thing is to reintroduce the API that provides strong separation of HTTP
+producers and consumers, allowing the same handler to respond requests made from
+the built in server, the FastCGI backend and many others. Note that the FastCGI
+backend is outside of the scope of this proposal. **Maybe** one source of API
+inspiration can be N3525 (polymorphic allocators), because it plays a similar
+role (converting one template-based API into runtime-based polymorphic
+behaviour).
 
 ## Deliverables
 

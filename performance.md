@@ -5,6 +5,17 @@
 This document aggregate notes about performance considerations within the
 proposed design in the main document.
 
+### The `boost::http::basic_message` abstraction
+
+The body attribute could be a wrapper to an existent buffer, but maybe it'll
+cause some problems (like copy-on-write strings did) and a copy will be
+required. Further investagion is required and these are some points to guide the
+investigation:
+
+* Zero-copy during message parsing.
+* Allow different backends (FastCGI, CoAP, built in server, ...) remain useful
+  and first-class citizen.
+
 ### The `boost::http::server::backend` interface
 
 <!-- TODO: update paragraph below according to decision that will exist related
