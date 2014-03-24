@@ -37,8 +37,9 @@
 
 ## Some target scenarios
 
-I've wrote this section several times, but Bjorn Reese put into better words
-than me, then I'll quote it.
+Bjorn Reese [put into better words](
+http://lists.boost.org/Archives/boost/2014/03/212072.php) than me, then I'll
+quote it.
 
 > 1. Targets embeddable HTTP servers (e.g. to implement ReST APIs).
 >    These servers should be able to co-exist with other embeddable
@@ -51,9 +52,6 @@ than me, then I'll quote it.
 > 4. Scalable performance.
 >    This requires an asynchronous design.
 > 5. Reuse existing std or Boost components, such as Boost.Asio.
-
--- Bjorn Reese, [on the boost mailing list](
-http://lists.boost.org/Archives/boost/2014/03/212072.php)
 
 ## Design considerations
 
@@ -188,7 +186,9 @@ model (see n3964 paper for more details).
 
 I've spent some time researching other frameworks and you can find [my analysis
 on them](other_frameworks.md) as something that will influence the design
-decisions.
+decisions. **I strongly suggest you to see the mentioned link and the only
+reason why I separated it from this document was to not create a document too
+big and hard to navigate.**
 
 ## Leveraging Boost
 
@@ -795,3 +795,37 @@ Small tasks that I miss/forget previously for any reason.
 ### After GSoC
 
 Continue to be one of the core HTTP server library maintainers.
+
+## The life of this proposal
+
+I've submitted this proposal to several C++ communities (boost mailing list,
+reddit/r/cpp, brazilian C/C++ mailing list and many others) asking for feedback
+and improving the proposal. Some of the members continued the debate over
+several communication channels (IRC, private emails, ...) to address several
+concerns until the design became more than an inspiration from other projects to
+something that can help other projects.
+
+The debate on the Boost mailing list, where there was even more than one person
+not only wishing good luck, but also offering help, demonstrate that there is
+really interest in this work.
+
+Other similar projects suffer from some design issue (from abstractions that
+hurt performance, to lack of generality or a design that even affect support for
+HTTP features).
+
+The last version of the HTTP protocol was standardized on 1999, but heavy
+development on the area continues to happen even today, with solutions to
+increase cooperation among different applications to handle requests (WSGI,
+...), new protocols created just to increase usefulness of HTTP (WebSocket) and
+major new versions (currently under discussion with people dedicating resources
+to eliminate problems in the drafts that could harm security, scalability,
+interoperability, major adoption, ...). HTTP is used also in some embedded
+devices to provide some interoperability between applications. Even the ROS
+robotic framework find an use for HTTP.
+
+In fact, there are some network connections that only allow traffic through the
+ports 80 and 443 (both related to HTTP).
+
+Boost has one of the best asynchronous I/O frameworks to C++, Boost ASIO. It'd
+be really useful to have a family of protocols available on top of Boost ASIO
+and HTTP is a great candidate (if not a must).
